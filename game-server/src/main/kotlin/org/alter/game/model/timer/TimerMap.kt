@@ -1,6 +1,9 @@
 package org.alter.game.model.timer
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import org.alter.game.model.appearance.Appearance
+import org.alter.game.model.appearance.Gender
+import org.bson.Document
 
 /**
  * A system responsible for storing and exposing [TimerKey]s and their associated
@@ -9,12 +12,14 @@ import com.fasterxml.jackson.annotation.JsonProperty
  * @author Tom <rspsmods@gmail.com>
  */
 class TimerMap {
-
     private var timers: MutableMap<TimerKey, Int> = HashMap(0)
 
     operator fun get(key: TimerKey): Int = timers[key]!!
 
-    operator fun set(key: TimerKey, value: Int): TimerMap {
+    operator fun set(
+        key: TimerKey,
+        value: Int,
+    ): TimerMap {
         timers[key] = value
         return this
     }
@@ -41,8 +46,10 @@ class TimerMap {
         }
     }
 
-
-    fun toPersistentTimers(): List<PersistentTimer> = timers.filter { it.key.persistenceKey != null }.map { PersistentTimer(it.key.persistenceKey, it.key.tickOffline, it.value, System.currentTimeMillis()) }
+    fun toPersistentTimers(): List<PersistentTimer> =
+        timers.filter {
+            it.key.persistenceKey != null
+        }.map { PersistentTimer(it.key.persistenceKey, it.key.tickOffline, it.value, System.currentTimeMillis()) }
 
     fun getTimers(): MutableMap<TimerKey, Int> = timers
 
@@ -52,8 +59,29 @@ class TimerMap {
     /**
      * Represents a persistent timer that will be saved through player sessions.
      */
-    data class PersistentTimer(@JsonProperty("identifier") val identifier: String? = null,
-                               @JsonProperty("tickOffline") val tickOffline: Boolean = true,
-                               @JsonProperty("timeLeft") val timeLeft: Int,
-                               @JsonProperty("currentMs") val currentMs: Long)
+    data class PersistentTimer(
+        @JsonProperty("identifier") val identifier: String? = null,
+        @JsonProperty("tickOffline") val tickOffline: Boolean = true,
+        @JsonProperty("timeLeft") val timeLeft: Int,
+        @JsonProperty("currentMs") val currentMs: Long,
+    ) {
+        fun asDocument(): Document {
+            return Document()
+                .append("tickOffline", tickOffline)
+                .append("timeLeft", timeLeft)
+                .append("currentMs", currentMs)
+        }
+
+        companion object {
+            fun fromDocument(identifier : String, doc: Document): PersistentTimer {
+                return PersistentTimer(
+                    identifier,
+                    doc.getBoolean("tickOffline"),
+                    doc.getInteger("timeLeft"),
+                    doc.getLong("currentMs")
+                )
+            }
+        }
+
+    }
 }

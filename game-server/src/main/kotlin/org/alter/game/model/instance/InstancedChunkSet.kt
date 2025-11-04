@@ -18,13 +18,15 @@ import org.alter.game.model.Tile
  * @author Tom <rspsmods@gmail.com>
  */
 class InstancedChunkSet(val regionSize: Int, val values: Map<Int, InstancedChunk>) {
-
     companion object {
-        fun getCoordinates(x: Int, z: Int, height: Int): Int = ((height and 0x3) shl 28) or ((x and 0x3FF) shl 14) or (z and 0x7FF)
+        fun getCoordinates(
+            x: Int,
+            y: Int,
+            height: Int,
+        ): Int = ((height and 0x3) shl 28) or ((x and 0x3FF) shl 14) or (y and 0x7FF)
     }
 
     class Builder {
-
         private var regionSize = -1
 
         private val chunks = hashMapOf<Int, InstancedChunk>()
@@ -37,18 +39,24 @@ class InstancedChunkSet(val regionSize: Int, val values: Map<Int, InstancedChunk
             return InstancedChunkSet(regionSize, chunks)
         }
 
-        fun set(chunkX: Int, chunkZ: Int, height: Int = 0, rot: Int = 0, copy: Tile): Builder {
+        fun set(
+            chunkX: Int,
+            chunkY: Int,
+            height: Int = 0,
+            rot: Int = 0,
+            copy: Tile,
+        ): Builder {
             check(height in 0 until Tile.TOTAL_HEIGHT_LEVELS) { "Height must be in bounds [0-3]" }
             check(rot in 0..3) { "Rotation must be in bounds [0-3]" }
 
-            if (regionSize < (chunkX shr 3) + 1 || regionSize < (chunkZ shr 3) + 1) {
-                regionSize = Math.max((chunkX shr 3) + 1, (chunkZ shr 3) + 1)
+            if (regionSize < (chunkX shr 3) + 1 || regionSize < (chunkY shr 3) + 1) {
+                regionSize = Math.max((chunkX shr 3) + 1, (chunkY shr 3) + 1)
             }
 
             val packed = copy.toRotatedInteger(rot)
             val chunk = InstancedChunk(packed)
 
-            val coordinates = getCoordinates(chunkX, chunkZ, height)
+            val coordinates = getCoordinates(chunkX, chunkY, height)
             chunks[coordinates] = chunk
             return this
         }

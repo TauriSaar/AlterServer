@@ -1,12 +1,16 @@
 package org.alter.game.model.instance
 
+import dev.openrune.cache.filestore.definition.data.ObjectType
 import org.alter.game.model.Area
 import org.alter.game.model.EntityType
 import org.alter.game.model.Tile
 import org.alter.game.model.World
+import org.alter.game.model.collision.block
 import org.alter.game.model.entity.DynamicObject
+import org.alter.game.model.entity.GameObject
 import org.alter.game.model.entity.Player
 import org.alter.game.model.entity.StaticObject
+import org.alter.game.model.move.moveTo
 import org.alter.game.model.region.Chunk
 
 /**
@@ -15,7 +19,6 @@ import org.alter.game.model.region.Chunk
  * @author Tom <rspsmods@gmail.com>
  */
 class InstancedMapAllocator {
-
     /**
      * A list of active [InstancedMap]s.
      */
@@ -37,7 +40,11 @@ class InstancedMapAllocator {
      * The [InstancedChunkSet] that holds all the [InstancedChunk]s that will make
      * up the newly constructed [InstancedMap], if applicable.
      */
-    fun allocate(world: World, chunks: InstancedChunkSet, configs: InstancedMapConfiguration): InstancedMap? {
+    fun allocate(
+        world: World,
+        chunks: InstancedChunkSet,
+        configs: InstancedMapConfiguration,
+    ): InstancedMap? {
         val area = VALID_AREA
         val step = 64
 
@@ -47,16 +54,15 @@ class InstancedMapAllocator {
         val totalTiles = chunks.regionSize * Chunk.REGION_SIZE
 
         for (x in area.bottomLeftX until area.topRightX step step) {
-            for (z in area.bottomLeftZ until area.topRightZ step step) {
-
+            for (y in area.bottomLeftY until area.topRightY step step) {
                 /*
-                 * If a map is already allocated in [x,z], we move on.
+                 * If a map is already allocated in [x,y], we move on.
                  */
-                if (maps.any { it.area.contains(x, z) || it.area.contains(x + totalTiles - 1, z + totalTiles - 1) }) {
+                if (maps.any { it.area.contains(x, y) || it.area.contains(x + totalTiles - 1, y + totalTiles - 1) }) {
                     continue
                 }
 
-                val map = allocate(x, z, chunks, configs)
+                val map = allocate(x, y, chunks, configs)
                 applyCollision(world, map, configs.bypassObjectChunkBounds)
                 maps.add(map)
                 return map
@@ -66,11 +72,24 @@ class InstancedMapAllocator {
         return null
     }
 
-    private fun allocate(x: Int, z: Int, chunks: InstancedChunkSet, configs: InstancedMapConfiguration): InstancedMap =
-            InstancedMap(Area(x, z, x + chunks.regionSize * Chunk.REGION_SIZE, z + chunks.regionSize * Chunk.REGION_SIZE), chunks,
-                    configs.exitTile, configs.owner, configs.attributes)
+    private fun allocate(
+        x: Int,
+        y: Int,
+        chunks: InstancedChunkSet,
+        configs: InstancedMapConfiguration,
+    ): InstancedMap =
+        InstancedMap(
+            Area(x, y, x + chunks.regionSize * Chunk.REGION_SIZE, y + chunks.regionSize * Chunk.REGION_SIZE),
+            chunks,
+            configs.exitTile,
+            configs.owner,
+            configs.attributes,
+        )
 
-    private fun deallocate(world: World, map: InstancedMap) {
+    private fun deallocate(
+        world: World,
+        map: InstancedMap,
+    ) {
         if (maps.remove(map)) {
             removeCollision(world, map)
             world.removeAll(map.area)
@@ -119,7 +138,6 @@ class InstancedMapAllocator {
 
     internal fun cycle(world: World) {
         if (deallocationScanCycle++ == SCAN_MAPS_CYCLES) {
-
             for (i in 0 until maps.size) {
                 val map = maps[i]
 
@@ -142,7 +160,11 @@ class InstancedMapAllocator {
      */
     fun getMap(tile: Tile): InstancedMap? = maps.find { it.area.contains(tile) }
 
-    private fun applyCollision(world: World, map: InstancedMap, bypassObjectChunkBounds: Boolean) {
+    private fun applyCollision(
+        world: World,
+        map: InstancedMap,
+        bypassObjectChunkBounds: Boolean,
+    ) {
         val bounds = Chunk.CHUNKS_PER_REGION * map.chunks.regionSize
         val heights = Tile.TOTAL_HEIGHT_LEVELS
 
@@ -167,21 +189,29 @@ class InstancedMapAllocator {
 
                         copyChunk.getEntities<StaticObject>(EntityType.STATIC_OBJECT).forEach { obj ->
                             if (obj.tile.height == chunkH && obj.tile.isInSameChunk(copyTile)) {
-                                val def = obj.getDef(world.definitions)
+                                val def = obj.getDef()
                                 val width = def.getRotatedWidth(obj)
                                 val length = def.getRotatedLength(obj)
 
                                 val localX = obj.tile.x % 8
                                 val localZ = obj.tile.z % 8
 
-                                val newObj = DynamicObject(obj.id, obj.type, (obj.rot + chunk.rot) and 0x3, baseTile.transformAndRotate(localX, localZ, chunk.rot, width, length))
+                                val newObj =
+                                    DynamicObject(
+                                        obj.id,
+                                        obj.type,
+                                        (obj.rot + chunk.rot) and 0x3,
+                                        baseTile.transformAndRotate(localX, localZ, chunk.rot, width, length),
+                                    )
                                 val insideChunk = newObj.tile.isInSameChunk(baseTile)
 
                                 if (insideChunk) {
                                     newChunk.addEntity(world, newObj, newObj.tile)
                                 } else if (!bypassObjectChunkBounds) {
-                                    throw IllegalStateException("Could not copy object due to its size and rotation outcome (object rotation + chunk rotation). " +
-                                            "The object would, otherwise, be spawned out of bounds of its original chunk. [obj=$obj, copy=$newObj]")
+                                    throw IllegalStateException(
+                                        "Could not copy object due to its size and rotation outcome (object rotation + chunk rotation). " +
+                                            "The object would, otherwise, be spawned out of bounds of its original chunk. [obj=$obj, copy=$newObj]",
+                                    )
                                 }
                             }
                         }
@@ -191,13 +221,13 @@ class InstancedMapAllocator {
                                 val localX = tile.x % 8
                                 val localZ = tile.z % 8
                                 val local = baseTile.transformAndRotate(localX, localZ, chunk.rot)
-                                newChunk.getMatrix(chunkH).block(local.x % 8, local.z % 8, impenetrable = true)
+                                world.collision.block(newChunk, chunkH, local.x % 8, local.z % 8, impenetrable = true)
                             }
                         }
                     } else {
                         for (lx in 0 until Chunk.CHUNK_SIZE) {
                             for (lz in 0 until Chunk.CHUNK_SIZE) {
-                                newChunk.getMatrix(chunkH).block(lx, lz, impenetrable = true)
+                                world.collision.block(newChunk, chunkH, lx, lz, impenetrable = true)
                             }
                         }
                     }
@@ -206,7 +236,10 @@ class InstancedMapAllocator {
         }
     }
 
-    private fun removeCollision(world: World, map: InstancedMap) {
+    private fun removeCollision(
+        world: World,
+        map: InstancedMap,
+    ) {
         val regionCount = map.chunks.regionSize
         val chunks = world.chunks
 
@@ -230,7 +263,7 @@ class InstancedMapAllocator {
          * [Instance support]: the amount of instances the world can support at a time,
          * assuming every map is 64x64 in size, which isn't always the case.
          */
-        private val VALID_AREA = Area(bottomLeftX = 6400, bottomLeftZ = 0, topRightX = 9600, topRightZ = 6400)
+        private val VALID_AREA = Area(bottomLeftX = 6400, bottomLeftY = 0, topRightX = 9600, topRightY = 6400)
 
         /**
          * The amount of game cycles that must go by before scanning the active
@@ -239,3 +272,15 @@ class InstancedMapAllocator {
         private const val SCAN_MAPS_CYCLES = 25
     }
 }
+
+fun ObjectType.getRotatedWidth(obj: GameObject): Int =
+    when {
+        (obj.rot and 0x1) == 1 -> sizeY
+        else -> sizeX
+    }
+
+fun ObjectType.getRotatedLength(obj: GameObject): Int =
+    when {
+        (obj.rot and 0x1) == 1 -> sizeX
+        else -> sizeY
+    }

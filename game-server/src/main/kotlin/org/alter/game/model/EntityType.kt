@@ -6,7 +6,6 @@ package org.alter.game.model
  * @author Tom <rspsmods@gmail.com>
  */
 enum class EntityType {
-
     /**
      * A player in our world, which does not necessarily need to be controlled
      * by a human.
@@ -29,7 +28,7 @@ enum class EntityType {
     STATIC_OBJECT,
 
     /**
-     * A game object that is spawned in by the [gg.rsmod.game.model.World].
+     * A game object that is spawned in by the [org.alter.game.model.World].
      */
     DYNAMIC_OBJECT,
 
@@ -51,7 +50,9 @@ enum class EntityType {
     /**
      * An area sound effect.
      */
-    AREA_SOUND;
+    AREA_SOUND,
+
+    ;
 
     val isHumanControlled: Boolean
         get() = this == CLIENT

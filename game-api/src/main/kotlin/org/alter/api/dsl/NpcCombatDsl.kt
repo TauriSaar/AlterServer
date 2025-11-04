@@ -1,31 +1,37 @@
 package org.alter.api.dsl
 
-import org.alter.game.plugin.KotlinPlugin
-import org.alter.api.BonusSlot
-import org.alter.api.NpcCombatBuilder
-import org.alter.api.NpcSkills
-import org.alter.api.NpcSpecies
+import org.alter.api.*
 import org.alter.api.ext.NPC_ATTACK_BONUS_INDEX
 import org.alter.api.ext.NPC_MAGIC_DAMAGE_BONUS_INDEX
 import org.alter.api.ext.NPC_RANGED_STRENGTH_BONUS_INDEX
 import org.alter.api.ext.NPC_STRENGTH_BONUS_INDEX
 import org.alter.api.ext.enumSetOf
+import org.alter.game.plugin.KotlinPlugin
 
-fun KotlinPlugin.set_combat_def(npc: Int, init: NpcCombatDsl.Builder.() -> Unit) {
+fun KotlinPlugin.setCombatDef(
+    npc: String,
+    init: NpcCombatDsl.Builder.() -> Unit,
+) {
+
     val builder = NpcCombatDsl.Builder()
     init(builder)
 
-    set_combat_def(npc, builder.build())
+    setCombatDef(npc, builder.build())
+}
+
+fun KotlinPlugin.setCombatDef(
+    vararg npc: String,
+    init: NpcCombatDsl.Builder.() -> Unit,
+) {
+    npc.forEach { setCombatDef(it, init) }
 }
 
 object NpcCombatDsl {
-
     @DslMarker
     annotation class CombatDslMarker
 
     @CombatDslMarker
     class Builder {
-
         private val combatBuilder = NpcCombatBuilder()
 
         fun build() = combatBuilder.build()
@@ -39,10 +45,82 @@ object NpcCombatDsl {
             combatBuilder.setPoisonChance(builder.poisonChance)
             combatBuilder.setVenomChance(builder.venomChance)
         }
-        //fun drops(init: WeightedTable.WeightedTableBuilder.() -> Unit) {
-        //    val builder = WeightedTable.WeightedTableBuilder(combatBuilder)
-        //    init(builder)
-        //}
+
+        /**
+         * @TODO Add multiple element weakness support
+         */
+        @CombatDslMarker
+        class defenceMagicBuilder {
+            var magic: Int = 0
+            var elementWeakness: ElementalWeakness? = null
+
+            fun build(): MagicDefence {
+                return MagicDefence(magic, elementWeakness)
+            }
+        }
+        @CombatDslMarker
+        class defenceMeleeBuilder {
+            var stab: Int = 0
+            var slash: Int = 0
+            var crush: Int = 0
+
+            fun build(): MeleeDefence {
+                return MeleeDefence(stab, slash, crush)
+            }
+        }
+
+        @CombatDslMarker
+        class defenceRangeBuilder {
+            var darts = 0
+            var arrows = 0
+            var bolts = 0
+            fun build(): RangeDefence {
+                return RangeDefence(darts, arrows, bolts)
+            }
+        }
+        class DefenceBuilder {
+            var meleeDefence: MeleeDefence? = null
+            var rangeDefence: RangeDefence? = null
+            var magicDefence: MagicDefence? = null
+            fun melee(init: defenceMeleeBuilder.() -> Unit) {
+                val builder = defenceMeleeBuilder()
+                builder.init()
+                meleeDefence = builder.build()
+            }
+
+            fun range(init: defenceRangeBuilder.() -> Unit) {
+                val builder = defenceRangeBuilder()
+                builder.init()
+                rangeDefence = builder.build()
+            }
+
+            fun magic(init: defenceMagicBuilder.() -> Unit) {
+                val builder = defenceMagicBuilder()
+                builder.init()
+                magicDefence = builder.build()
+            }
+        }
+        fun defence(init: DefenceBuilder.() -> Unit) {
+            val builder = DefenceBuilder()
+            builder.init()
+
+        }
+
+        @CombatDslMarker
+        class ImmunitiesBuilder {
+            var poison = false
+            var venom = false
+            var cannon = false
+            var thralls = false
+        }
+        fun immunities(init: ImmunitiesBuilder.() -> Unit) {
+            val builder = ImmunitiesBuilder()
+            init(builder)
+            combatBuilder.setPoisonImmunity(builder.poison)
+            combatBuilder.setVenomImmunity(builder.venom)
+            combatBuilder.setCannonImmunity(builder.cannon)
+            combatBuilder.setThrallsImmunity(builder.thralls)
+        }
 
         fun aggro(init: AggressivenessBuilder.() -> Unit) {
             val builder = AggressivenessBuilder()
@@ -59,9 +137,12 @@ object NpcCombatDsl {
             init(builder)
 
             combatBuilder.setHitpoints(builder.hitpoints)
-            stats.forEach { stat ->
-                combatBuilder.setLevel(stat.first, stat.second)
-            }
+            combatBuilder.setAttackLevel(builder.attack)
+            combatBuilder.setDefenceLevel(builder.defence)
+            combatBuilder.setStrengthLevel(builder.strength)
+            combatBuilder.setMagicLevel(builder.magic)
+            combatBuilder.setRangedLevel(builder.ranged)
+
         }
 
         fun bonuses(init: BonusBuilder.() -> Unit) {
@@ -116,8 +197,17 @@ object NpcCombatDsl {
             init(builder)
             /**
              * @TODO Forgot if it's true or not but => Theres some monsters that can only be attacked on task.
+             * Addition: Yh, so there are mobs that can only be attacked during Slayer task / If you have paid your way in,
+             *          ^ Add a way to block out attacking if code block returns false.
+             *          So that we could reuse it for other shit and slayer.
              */
             combatBuilder.setSlayerParams(builder.levelRequirement, builder.xp)
+        }
+
+        fun drops(init: WeightedTableBuilder.() -> Unit) {
+            val builder = WeightedTableBuilder()
+            builder.combatBuilder = combatBuilder
+            init(builder)
         }
     }
 
@@ -197,7 +287,6 @@ object NpcCombatDsl {
 
     @CombatDslMarker
     class StatsBuilder(private val stats: MutableList<Pair<Int, Int>>) {
-
         var hitpoints = 1
 
         var attack: Int = 1
@@ -235,7 +324,6 @@ object NpcCombatDsl {
 
     @CombatDslMarker
     class BonusBuilder(private val bonuses: MutableList<Pair<Int, Int>>) {
-
         var attackStab: Int = 0
             set(value) {
                 set(Pair(BonusSlot.ATTACK_STAB.id, value))
@@ -316,7 +404,6 @@ object NpcCombatDsl {
 
     @CombatDslMarker
     class SpeciesBuilder(private val species: MutableSet<NpcSpecies>) {
-
         infix fun of(species: NpcSpecies) {
             this.species.add(species)
         }
@@ -339,7 +426,6 @@ object NpcCombatDsl {
 
     @CombatDslMarker
     class AnimationBuilder {
-
         var attack = -1
         var block = -1
         private val deathList = mutableListOf<Int>()
@@ -361,7 +447,6 @@ object NpcCombatDsl {
 
         @CombatDslMarker
         class DeathBuilder(private val anims: MutableList<Int>) {
-
             infix fun add(anim: Int) {
                 anims.add(anim)
             }
@@ -388,7 +473,6 @@ object NpcCombatDsl {
                 field = value
             }
 
-
         var deathSound = -1
         var deathArea: Boolean = false
         var deathVolume: Int = 50
@@ -398,7 +482,5 @@ object NpcCombatDsl {
                 check(deathArea) { "Can't assign deathRadius when deathArea is false." }
                 field = value
             }
-
     }
 }
-

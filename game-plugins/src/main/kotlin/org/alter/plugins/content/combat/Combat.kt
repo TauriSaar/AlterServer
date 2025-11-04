@@ -1,12 +1,13 @@
 package org.alter.plugins.content.combat
 
-import org.alter.game.action.PawnPathAction
+import org.alter.api.*
+import org.alter.api.ext.*
 import org.alter.game.model.Tile
-import org.alter.game.model.World
 import org.alter.game.model.attr.AttributeKey
 import org.alter.game.model.attr.COMBAT_TARGET_FOCUS_ATTR
 import org.alter.game.model.attr.LAST_HIT_ATTR
 import org.alter.game.model.attr.LAST_HIT_BY_ATTR
+import org.alter.game.model.collision.rayCast
 import org.alter.game.model.combat.CombatClass
 import org.alter.game.model.entity.AreaSound
 import org.alter.game.model.entity.Npc
@@ -15,22 +16,17 @@ import org.alter.game.model.entity.Player
 import org.alter.game.model.queue.QueueTask
 import org.alter.game.model.timer.ACTIVE_COMBAT_TIMER
 import org.alter.game.model.timer.ATTACK_DELAY
-import org.alter.game.sync.block.UpdateBlockType
-import org.alter.api.*
-import org.alter.api.ext.*
 import org.alter.plugins.content.combat.strategy.CombatStrategy
 import org.alter.plugins.content.combat.strategy.MagicCombatStrategy
 import org.alter.plugins.content.combat.strategy.MeleeCombatStrategy
 import org.alter.plugins.content.combat.strategy.RangedCombatStrategy
 import org.alter.plugins.content.combat.strategy.magic.CombatSpell
-import org.alter.plugins.content.interfaces.attack.AttackTab
 import java.lang.ref.WeakReference
 
 /**
  * @author Tom <rspsmods@gmail.com>
  */
 object Combat {
-
     val CASTING_SPELL = AttributeKey<CombatSpell>()
     val DAMAGE_DEAL_MULTIPLIER = AttributeKey<Double>()
     val DAMAGE_TAKE_MULTIPLIER = AttributeKey<Double>()
@@ -43,13 +39,24 @@ object Combat {
         pawn.attr.remove(COMBAT_TARGET_FOCUS_ATTR)
     }
 
-    fun canAttack(pawn: Pawn, target: Pawn, combatClass: CombatClass): Boolean = canEngage(pawn, target) && getStrategy(combatClass).canAttack(pawn, target)
+    fun canAttack(
+        pawn: Pawn,
+        target: Pawn,
+        combatClass: CombatClass,
+    ): Boolean = canEngage(pawn, target) && getStrategy(combatClass).canAttack(pawn, target)
 
-    fun canAttack(pawn: Pawn, target: Pawn, strategy: CombatStrategy): Boolean = canEngage(pawn, target) && strategy.canAttack(pawn, target)
+    fun canAttack(
+        pawn: Pawn,
+        target: Pawn,
+        strategy: CombatStrategy,
+    ): Boolean = canEngage(pawn, target) && strategy.canAttack(pawn, target)
 
     fun isAttackDelayReady(pawn: Pawn): Boolean = !pawn.timers.has(ATTACK_DELAY)
 
-    fun postAttack(pawn: Pawn, target: Pawn) {
+    fun postAttack(
+        pawn: Pawn,
+        target: Pawn,
+    ) {
         pawn.timers[ATTACK_DELAY] = CombatConfigs.getAttackDelay(pawn)
         target.timers[ACTIVE_COMBAT_TIMER] = 17 // 10,2 seconds
         pawn.attr[BOLT_ENCHANTMENT_EFFECT] = false
@@ -68,7 +75,10 @@ object Combat {
         }
     }
 
-    fun postDamage(pawn: Pawn, target: Pawn) {
+    fun postDamage(
+        pawn: Pawn,
+        target: Pawn,
+    ) {
         if (target.isDead()) {
             return
         }
@@ -76,19 +86,21 @@ object Combat {
         /*
          * Don't override the animation if one is already set. @Z-Kris
          */
-        if (!target.hasBlock(UpdateBlockType.ANIMATION)) {
+        val hasBlock = target.previouslySetAnim != -1
+
+        if (!hasBlock) {
             target.animate(CombatConfigs.getBlockAnimation(target))
             if (target is Npc) {
                 val npcDefs = target.combatDef
                 if (npcDefs.defaultBlockSoundArea) {
-                    target.world.spawn(AreaSound(target.tile, npcDefs.defaultBlockSound, npcDefs.defaultBlockSoundRadius, npcDefs.defaultBlockSoundVolume))
+                    target.world.spawn(
+                        AreaSound(target.tile, npcDefs.defaultBlockSound, npcDefs.defaultBlockSoundRadius, npcDefs.defaultBlockSoundVolume),
+                    )
                 } else {
                     (pawn as Player).playSound(npcDefs.defaultBlockSound, npcDefs.defaultBlockSoundVolume)
                 }
             }
         }
-
-
 
         if (target.lock.canAttack()) {
             if (target.entityType.isNpc) {
@@ -96,9 +108,20 @@ object Combat {
                     target.attack(pawn)
                 }
             } else if (target is Player) {
-                if (target.getVarp(AttackTab.DISABLE_AUTO_RETALIATE_VARP) == 0 && target.getCombatTarget() != pawn) {
+                val strategy = CombatConfigs.getCombatStrategy(target)
+                val attackRange = strategy.getAttackRange(target)
+                if (/** target.getVarp(AttackTab.DISABLE_AUTO_RETALIATE_VARP) == 0 && */ target.getCombatTarget() != pawn && target.tile.isWithinRadius(pawn.tile, attackRange)) {
                     target.attack(pawn)
-                }
+                } /**
+                    * @TODO Auto Retaliate
+                    */
+                    //else {
+                  //  val route = target.pathToRange(pawn)
+                  //  target.queue(TaskPriority.WEAK) {
+                  //      println("From here 124")
+                  //      awaitArrivalRanged(route, attackRange)
+                  //  }
+               // }
             }
         }
     }
@@ -110,19 +133,37 @@ object Combat {
         val hitpoints = npc.getMaxHp()
 
         val averageLvl = Math.floor((attackLvl + strengthLvl + defenceLvl + hitpoints) / 4.0)
-        val averageDefBonus = Math.floor((npc.getBonus(BonusSlot.DEFENCE_STAB) + npc.getBonus(BonusSlot.DEFENCE_SLASH) + npc.getBonus(BonusSlot.DEFENCE_CRUSH)) / 3.0)
+        val averageDefBonus =
+            Math.floor(
+                (
+                    npc.getBonus(
+                        BonusSlot.DEFENCE_STAB,
+                    ) + npc.getBonus(BonusSlot.DEFENCE_SLASH) + npc.getBonus(BonusSlot.DEFENCE_CRUSH)
+                ) / 3.0,
+            )
         return 1.0 + Math.floor(averageLvl * (averageDefBonus + npc.getStrengthBonus() + npc.getAttackBonus()) / 5120.0) / 40.0
     }
 
-    fun raycast(pawn: Pawn, target: Pawn, distance: Int, projectile: Boolean): Boolean {
+    fun raycast(
+        pawn: Pawn,
+        target: Pawn,
+        distance: Int,
+        projectile: Boolean,
+    ): Boolean {
         val world = pawn.world
         val start = pawn.tile
         val end = target.tile
 
-        return start.isWithinRadius(end, distance) && world.collision.raycast(start, end, projectile = projectile)
+        return start.isWithinRadius(end, distance) && world.lineValidator.rayCast(start, end, projectile = projectile)
     }
 
-    suspend fun moveToAttackRange(it: QueueTask, pawn: Pawn, target: Pawn, distance: Int, projectile: Boolean): Boolean {
+    suspend fun moveToAttackRange(
+        it: QueueTask,
+        pawn: Pawn,
+        target: Pawn,
+        distance: Int,
+        projectile: Boolean,
+    ): Boolean {
         val world = pawn.world
         val start = pawn.tile
         val end = target.tile
@@ -130,32 +171,45 @@ object Combat {
         val srcSize = pawn.getSize()
         val dstSize = Math.max(distance, target.getSize())
 
-        val touching = if (distance > 1) areOverlapping(start.x, start.z, srcSize, srcSize, end.x, end.z, dstSize, dstSize)
-                        else areBordering(start.x, start.z, srcSize, srcSize, end.x, end.z, dstSize, dstSize)
-        val withinRange = touching && world.collision.raycast(start, end, projectile = projectile)
-        return withinRange || PawnPathAction.walkTo(it, pawn, target, interactionRange = distance, lineOfSight = false)
+        val touching =
+            if (distance > 1) {
+                areOverlapping(start.x, start.z, srcSize, srcSize, end.x, end.z, dstSize, dstSize)
+            } else {
+                areBordering(start.x, start.z, srcSize, srcSize, end.x, end.z, dstSize, dstSize)
+            }
+        val withinRange = touching && world.lineValidator.rayCast(start, end, projectile = projectile)
+        return withinRange //|| pawn.walkToInteract(it, target, lineOfSightRange = distance)
     }
 
-    fun getProjectileLifespan(source: Pawn, target: Tile, type: ProjectileType): Int = when (type) {
-        ProjectileType.MAGIC -> {
-            val fastPath = source.world.collision.raycastTiles(source.tile, target)
-            5 + (fastPath * 10)
+    fun getProjectileLifespan(
+        source: Pawn,
+        target: Tile,
+        type: ProjectileType,
+    ): Int =
+        when (type) {
+            ProjectileType.MAGIC -> {
+                val fastRoute = source.tile.getChebyshevDistance(target)
+                5 + (fastRoute * 10)
+            }
+            else -> {
+                val distance = source.tile.getDistance(target)
+                type.calculateLife(distance)
+            }
         }
-        else -> {
-            val distance = source.tile.getDistance(target)
-            type.calculateLife(distance)
-        }
-    }
 
-    fun canEngage(pawn: Pawn, target: Pawn): Boolean {
+    fun canEngage(
+        pawn: Pawn,
+        target: Pawn,
+    ): Boolean {
         if (pawn.isDead() || target.isDead()) {
             return false
         }
 
-        val maxDistance = when {
-            pawn is Player && pawn.hasLargeViewport() -> Player.LARGE_VIEW_DISTANCE
-            else -> Player.NORMAL_VIEW_DISTANCE
-        }
+        val maxDistance =
+            when {
+                pawn is Player && pawn.hasLargeViewport() -> Player.LARGE_VIEW_DISTANCE
+                else -> Player.NORMAL_VIEW_DISTANCE
+            }
         if (!pawn.tile.isWithinRadius(target.tile, maxDistance)) {
             return false
         }
@@ -235,14 +289,23 @@ object Combat {
         return minLvl..maxLvl
     }
 
-    private fun getStrategy(combatClass: CombatClass): CombatStrategy = when (combatClass) {
-        CombatClass.MELEE -> MeleeCombatStrategy
-        CombatClass.RANGED -> RangedCombatStrategy
-        CombatClass.MAGIC -> MagicCombatStrategy
-    }
+    private fun getStrategy(combatClass: CombatClass): CombatStrategy =
+        when (combatClass) {
+            CombatClass.MELEE -> MeleeCombatStrategy
+            CombatClass.RANGED -> RangedCombatStrategy
+            CombatClass.MAGIC -> MagicCombatStrategy
+        }
 
-    private fun areOverlapping(x1: Int, z1: Int, width1: Int, length1: Int,
-                       x2: Int, z2: Int, width2: Int, length2: Int): Boolean {
+    private fun areOverlapping(
+        x1: Int,
+        z1: Int,
+        width1: Int,
+        length1: Int,
+        x2: Int,
+        z2: Int,
+        width2: Int,
+        length2: Int,
+    ): Boolean {
         val a = Box(x1, z1, width1 - 1, length1 - 1)
         val b = Box(x2, z2, width2 - 1, length2 - 1)
 
@@ -250,7 +313,7 @@ object Combat {
             return false
         }
 
-        if (a.z1 > b.z2 || b.z1 > a.z2) {
+        if (a.y1 > b.y2 || b.y1 > a.y2) {
             return false
         }
 
@@ -260,12 +323,20 @@ object Combat {
     /**
      * Checks to see if two AABB are bordering, but not overlapping.
      */
-    fun areBordering(x1: Int, z1: Int, width1: Int, length1: Int,
-                     x2: Int, z2: Int, width2: Int, length2: Int): Boolean {
+    fun areBordering(
+        x1: Int,
+        z1: Int,
+        width1: Int,
+        length1: Int,
+        x2: Int,
+        z2: Int,
+        width2: Int,
+        length2: Int,
+    ): Boolean {
         val a = Box(x1, z1, width1 - 1, length1 - 1)
         val b = Box(x2, z2, width2 - 1, length2 - 1)
 
-        if (b.x1 in a.x1 .. a.x2 && b.z1 in a.z1 .. a.z2 || b.x2 in a.x1 .. a.x2 && b.z2 in a.z1 .. a.z2) {
+        if (b.x1 in a.x1..a.x2 && b.y1 in a.y1..a.y2 || b.x2 in a.x1..a.x2 && b.y2 in a.y1..a.y2) {
             return false
         }
 
@@ -277,24 +348,23 @@ object Combat {
             return false
         }
 
-        if (b.z1 > a.z2 + 1) {
+        if (b.y1 > a.y2 + 1) {
             return false
         }
 
-        if (b.z2 < a.z1 - 1) {
+        if (b.y2 < a.y1 - 1) {
             return false
         }
         return true
     }
 
-    data class Box(val x: Int, val z: Int, val width: Int, val length: Int) {
-
+    data class Box(val x: Int, val y: Int, val width: Int, val length: Int) {
         val x1: Int get() = x
 
         val x2: Int get() = x + width
 
-        val z1: Int get() = z
+        val y1: Int get() = y
 
-        val z2: Int get() = z + length
+        val y2: Int get() = y + length
     }
 }

@@ -1,11 +1,19 @@
 package org.alter.game.action
 
-import org.alter.game.fs.def.AnimDef
+import dev.openrune.cache.CacheManager.getAnim
+import org.alter.game.action.NpcDeathAction.reset
+import org.alter.game.info.NpcInfo
 import org.alter.game.model.LockState
 import org.alter.game.model.attr.KILLER_ATTR
-import org.alter.game.model.entity.*
+import org.alter.game.model.entity.AreaSound
+import org.alter.game.model.entity.Npc
+import org.alter.game.model.entity.Pawn
+import org.alter.game.model.entity.Player
+import org.alter.game.model.move.moveTo
+import org.alter.game.model.move.stopMovement
 import org.alter.game.model.queue.QueueTask
 import org.alter.game.model.queue.TaskPriority
+import org.alter.game.model.weightedTableBuilder.roll
 import org.alter.game.plugin.Plugin
 import org.alter.game.service.log.LoggerService
 import java.lang.ref.WeakReference
@@ -16,20 +24,19 @@ import java.lang.ref.WeakReference
  * @author Tom <rspsmods@gmail.com>
  */
 object NpcDeathAction {
-
-    val deathPlugin: Plugin.() -> Unit = {
+    var deathPlugin: Plugin.() -> Unit = {
         val npc = ctx as Npc
-
-        npc.interruptQueues()
-        npc.stopMovement()
-        npc.lock()
-
-        npc.queue(TaskPriority.STRONG) {
-            death(npc)
+        if (!npc.world.plugins.executeNpcFullDeath(npc)) {
+            npc.interruptQueues()
+            npc.stopMovement()
+            npc.lock()
+            npc.queue(TaskPriority.STRONG) {
+                death(npc)
+            }
         }
     }
 
-    private suspend fun QueueTask.death(npc: Npc) {
+    suspend fun QueueTask.death(npc: Npc) {
         val world = npc.world
         val deathAnimation = npc.combatDef.deathAnimation
         val deathSound = npc.combatDef.defaultDeathSound
@@ -42,41 +49,41 @@ object NpcDeathAction {
             }
             npc.attr[KILLER_ATTR] = WeakReference(it)
         }
+        NpcInfo(npc).setAllOpsInvisible()
         world.plugins.executeNpcPreDeath(npc)
         npc.resetFacePawn()
-
         if (npc.combatDef.defaultDeathSoundArea) {
             world.spawn(AreaSound(npc.tile, deathSound, npc.combatDef.defaultDeathSoundRadius, npc.combatDef.defaultDeathSoundVolume))
         } else {
             (killer as? Player)?.playSound(deathSound, npc.combatDef.defaultDeathSoundVolume)
         }
 
+        /**
+         * @TODO add interruption for this block if we would want to execute a plugin during it's death animation
+         */
         deathAnimation.forEach { anim ->
-            val def = npc.world.definitions.get(AnimDef::class.java, anim)
-            npc.animate(def.id)
-            wait(def.cycleLength +1)
+            val def = getAnim(anim)
+            npc.animate(def.id, def.cycleLength)
+            wait(def.cycleLength)
         }
-
-        npc.animate(-1)
         world.plugins.executeNpcDeath(npc)
-
-
+        world.plugins.anyNpcDeath.forEach {
+            npc.executePlugin(it)
+        }
         if (npc.respawns) {
-            npc.invisible = true
+            NpcInfo(npc).setInaccessible(true)
             npc.reset()
             wait(respawnDelay)
-            npc.invisible = false
+            NpcInfo(npc).setAllOpsVisible()
+            NpcInfo(npc).setInaccessible(false)
             world.plugins.executeNpcSpawn(npc)
         } else {
             world.remove(npc)
         }
     }
-
     private fun Npc.reset() {
         lock = LockState.NONE
-        tile = spawnTile
-        setTransmogId(-1)
-
+        moveTo(spawnTile)
         attr.clear()
         timers.clear()
         world.setNpcDefaults(this)

@@ -1,6 +1,7 @@
 package org.alter.game.action
 
-import org.alter.game.fs.def.ItemDef
+import dev.openrune.cache.CacheManager.getItem
+import org.alter.game.info.PlayerInfo
 import org.alter.game.model.entity.Player
 import org.alter.game.model.item.Item
 
@@ -11,7 +12,6 @@ import org.alter.game.model.item.Item
  * @author Tom <rspsmods@gmail.com>
  */
 object EquipAction {
-
     // Temporary way of loading skill names until we figure out the best solution.
     //  1) We can have a map of <skill, name> and populate it via plugins
     //  2) Execute a plugin when skill requirement is not met that will handle
@@ -19,9 +19,29 @@ object EquipAction {
     //  3) Load skill names via external configs which would be used throughout
     //      the game and plugins module
     private val SKILL_NAMES = arrayOf(
-        "attack", "defence", "strength", "hitpoints", "ranged", "prayer", "magic", "cooking",
-        "woodcutting", "fletching", "fishing", "firemaking", "crafting", "Smithing", "mining", "herblore",
-        "agility", "thieving", "slayer", "farming", "runecrafting", "hunter", "construction"
+        "attack",
+        "defence",
+        "strength",
+        "hitpoints",
+        "ranged",
+        "prayer",
+        "magic",
+        "cooking",
+        "woodcutting",
+        "fletching",
+        "fishing",
+        "firemaking",
+        "crafting",
+        "Smithing",
+        "mining",
+        "herblore",
+        "agility",
+        "thieving",
+        "slayer",
+        "farming",
+        "runecrafting",
+        "hunter",
+        "construction",
     )
 
     /**
@@ -56,11 +76,15 @@ object EquipAction {
         /**
          * Item interaction could not be handled.
          */
-        INVALID_ITEM
+        INVALID_ITEM,
     }
 
-    fun equip(p: Player, item: Item, inventorySlot: Int = -1): Result {
-        val def = p.world.definitions.get(ItemDef::class.java, item.id)
+    fun equip(
+        p: Player,
+        item: Item,
+        inventorySlot: Int = -1,
+    ): Result {
+        val def = getItem(item.id)
         val plugins = p.world.plugins
 
         // Resets interaction when an item is equipped.
@@ -80,6 +104,7 @@ object EquipAction {
 
         val levelRequirements = def.skillReqs
         if (levelRequirements != null) {
+            var failed = false
             for (entry in levelRequirements.entries) {
                 val skill = entry.key.toInt()
                 val level = entry.value
@@ -87,16 +112,19 @@ object EquipAction {
                 if (p.getSkills().getBaseLevel(skill) < level) {
                     val skillName = SKILL_NAMES[skill]
                     val prefix = if ("aeiou".indexOf(Character.toLowerCase(skillName[0])) != -1) "an" else "a"
+                    failed = true
+
                     p.writeMessage("You are not high enough level to use this item.")
                     p.writeMessage("You need to have $prefix $skillName level of $level.")
-                    return Result.FAILED_REQUIREMENTS
                 }
+            }
+            if (failed) {
+                return Result.FAILED_REQUIREMENTS
             }
         }
 
         val equipSlot = def.equipSlot
         val equipType = def.equipType
-
         val replace = p.equipment[equipSlot]
         val stackable = def.stackable
 
@@ -111,7 +139,13 @@ object EquipAction {
                 return Result.NO_FREE_SPACE
             }
             if (inventorySlot != -1) {
-                val transaction = p.inventory.remove(item.id, amount = add, assureFullRemoval = false, beginSlot = inventorySlot)
+                val transaction = p.inventory.remove(
+                    item = item.id,
+                    amount = add,
+                    assureFullRemoval = false,
+                    beginSlot = inventorySlot
+                )
+
                 if (transaction.completed == 0) {
                     return Result.INVALID_ITEM
                 }
@@ -119,8 +153,11 @@ object EquipAction {
             } else {
                 p.equipment[equipSlot] = Item(replace.id, add + replace.amount)
             }
+
+            PlayerInfo(p).syncAppearance()
             plugins.executeEquipSlot(p, equipSlot)
             plugins.executeEquipItem(p, replace.id)
+
         } else {
             /*
              * A list of equipment slots that should be unequipped when [item] is
@@ -130,7 +167,7 @@ object EquipAction {
 
             if (equipType != -1 && equipType != equipSlot) {
                 /*
-                 * [gg.rsmod.game.fs.def.ItemDef.equipType] counts as a 'secondary'
+                 * [org.alter.game.fs.def.ItemDef.equipType] counts as a 'secondary'
                  * equipment slot, which should be unequipped as well.
                  *
                  * For example, 2h swords have an equipment type of 5, which is also
@@ -147,7 +184,7 @@ object EquipAction {
              */
             for (i in 0 until p.equipment.capacity) {
                 val equip = p.equipment[i] ?: continue
-                val otherDef = p.world.definitions.get(ItemDef::class.java, equip.id)
+                val otherDef = getItem(equip.id)
                 if (otherDef.equipType == equipSlot && otherDef.equipType != 0) {
                     unequip.add(i)
                 }
@@ -161,7 +198,10 @@ object EquipAction {
 
             val newEquippedItem = Item(item)
 
-            if (inventorySlot == -1 || p.inventory.remove(item.id, item.amount, beginSlot = inventorySlot).hasSucceeded()) {
+            if (
+                inventorySlot == -1 ||
+                p.inventory.remove(item.id, item.amount, beginSlot = inventorySlot).hasSucceeded()
+            ) {
                 var initialSlot = inventorySlot
 
                 /*
@@ -173,13 +213,16 @@ object EquipAction {
                  */
                 if (stackable && replace != null) {
                     val maxAmount = Int.MAX_VALUE - p.inventory.getItemCount(replace.id)
+
                     if (replace.amount > maxAmount) {
                         if (inventorySlot != -1) {
                             p.inventory.add(item.id, newEquippedItem.amount, beginSlot = inventorySlot)
                         }
                         p.writeMessage("You don't have enough free inventory space to do that.")
+
                         return Result.NO_FREE_SPACE
                     }
+
                     if (maxAmount != Int.MAX_VALUE) {
                         initialSlot = p.inventory.getItemIndex(replace.id, skipAttrItems = true)
                     }
@@ -192,28 +235,35 @@ object EquipAction {
                     val equipment = p.equipment[slot] ?: return@forEach
                     val equipmentId = equipment.id
 
-                    val transaction = p.inventory.add(equipment.id, equipment.amount, beginSlot = if (initialSlot != -1) initialSlot else 0)
+                    val transaction = p.inventory.add(
+                        equipment.id,
+                        equipment.amount,
+                        beginSlot = if (initialSlot != -1) initialSlot else 0
+                    )
+
                     transaction.items.firstOrNull()?.item?.copyAttr(equipment)
                     initialSlot = -1
+
                     if (slot != equipSlot) {
                         p.equipment[slot] = null
                     }
                     onItemUnequip(p, equipmentId, slot)
                 }
 
-                if (def.equipSound != null) {
-                    p.playSound(def.equipSound!!)
-                }
-
                 p.equipment[equipSlot] = newEquippedItem
+                PlayerInfo(p).syncAppearance()
                 plugins.executeEquipSlot(p, equipSlot)
                 plugins.executeEquipItem(p, newEquippedItem.id)
             }
         }
+
         return Result.SUCCESS
     }
 
-    fun unequip(p: Player, equipmentSlot: Int): Result {
+    fun unequip(
+        p: Player,
+        equipmentSlot: Int,
+    ): Result {
         val item = p.equipment[equipmentSlot] ?: return Result.INVALID_ITEM
 
         val addition = p.inventory.add(item.id, item.amount, assureFullInsertion = false)
@@ -231,11 +281,17 @@ object EquipAction {
             p.equipment[equipmentSlot] = leftover
         }
 
+        PlayerInfo(p).syncAppearance()
         onItemUnequip(p, item.id, equipmentSlot)
+
         return Result.SUCCESS
     }
 
-    fun onItemUnequip(p: Player, item: Int, slot: Int) {
+    fun onItemUnequip(
+        p: Player,
+        item: Int,
+        slot: Int,
+    ) {
         p.world.plugins.executeUnequipItem(p, item)
         p.world.plugins.executeUnequipSlot(p, slot)
     }

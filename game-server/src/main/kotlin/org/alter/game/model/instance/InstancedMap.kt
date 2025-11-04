@@ -28,9 +28,13 @@ import java.util.*
  *
  * @author Tom <rspsmods@gmail.com>
  */
-class InstancedMap internal constructor(val area: Area, val chunks: InstancedChunkSet, val exitTile: Tile,
-                                        val owner: PlayerUID?, val attr: EnumSet<InstancedMapAttribute>) {
-
+class InstancedMap internal constructor(
+    val area: Area,
+    val chunks: InstancedChunkSet,
+    val exitTile: Tile,
+    val owner: PlayerUID?,
+    val attr: EnumSet<InstancedMapAttribute>,
+) {
     /**
      * Get the [InstancedChunk.packed] values in relation to the [relative] tile.
      *
@@ -57,9 +61,9 @@ class InstancedMap internal constructor(val area: Area, val chunks: InstancedChu
                 for (z in 0 until bounds) {
                     val absolute = Tile(startX + (x shl 3), startZ + (z shl 3))
                     val chunkX = (absolute.x - area.bottomLeftX) shr 3
-                    val chunkZ = (absolute.z - area.bottomLeftZ) shr 3
+                    val chunkY = (absolute.z - area.bottomLeftY) shr 3
 
-                    val coord = InstancedChunkSet.getCoordinates(chunkX, chunkZ, height)
+                    val coord = InstancedChunkSet.getCoordinates(chunkX, chunkY, height)
                     val chunk = chunks.values[coord]
 
                     coordinates[index++] = chunk?.packed ?: -1

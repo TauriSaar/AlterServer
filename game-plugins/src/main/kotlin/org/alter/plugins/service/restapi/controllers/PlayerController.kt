@@ -2,31 +2,29 @@ package org.alter.plugins.service.restapi.controllers
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import org.alter.game.Server.Companion.logger
-import org.alter.game.model.World
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.alter.api.Skills
+import org.alter.game.model.World
 import spark.Request
 import spark.Response
 
 class PlayerController(req: Request, resp: Response, auth: Boolean) : Controller(req, resp, auth) {
-
     val req = req
+    private val logger = KotlinLogging.logger {}
 
     override fun init(world: World): JsonObject {
-
         val obj = JsonObject()
         val user = JsonArray()
 
-        logger.info("Username: {}", req.params("name"))
+        logger.info { "Username: ${req.params("name")}"  }
 
-        logger.info("params: {}", req.params())
+        logger.info { "params: ${req.params()}"  }
 
         val username = req.params("name")
 
         world.players.forEach { player ->
 
-            if(player.username == username) {
-
+            if (player.username == username) {
                 val pObj = JsonObject()
 
                 // Main Player Object
@@ -41,7 +39,7 @@ class PlayerController(req: Request, resp: Response, auth: Boolean) : Controller
 
                 val skillArr = JsonArray()
 
-                for(i in 0..22) {
+                for (i in 0..22) {
                     val skill = JsonObject()
                     skill.addProperty("name", Skills.getSkillName(world, player.getSkills().get(i).id))
                     skill.addProperty("currentLevel", player.getSkills().get(i).currentLevel)
@@ -74,5 +72,4 @@ class PlayerController(req: Request, resp: Response, auth: Boolean) : Controller
 
         return obj
     }
-
 }

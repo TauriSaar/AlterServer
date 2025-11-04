@@ -1,10 +1,9 @@
 package org.alter.game.service.rsa
 
-import org.alter.game.Server
+import gg.rsmod.util.ServerProperties
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.alter.game.model.World
 import org.alter.game.service.Service
-import gg.rsmod.util.ServerProperties
-import mu.KLogging
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.util.io.pem.PemObject
 import org.bouncycastle.util.io.pem.PemReader
@@ -23,13 +22,13 @@ import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Scanner
 
 /**
  * @author Tom <rspsmods@gmail.com>
  */
 class RsaService : Service {
-
     private lateinit var keyPath: Path
 
     private lateinit var exponent: BigInteger
@@ -38,7 +37,11 @@ class RsaService : Service {
 
     private var radix = -1
 
-    override fun init(server: org.alter.game.Server, world: World, serviceProperties: ServerProperties) {
+    override fun init(
+        server: org.alter.game.Server,
+        world: World,
+        serviceProperties: ServerProperties,
+    ) {
         keyPath = Paths.get(serviceProperties.getOrDefault("path", "../data/rsa/key.pem"))
         radix = serviceProperties.getOrDefault("radix", 16)
 
@@ -49,7 +52,7 @@ class RsaService : Service {
 
             val create = if (scanner.hasNext()) scanner.nextLine() in arrayOf("yes", "y", "true") else true
             if (create) {
-                logger.info("Generating RSA key pair...")
+                logger.info { "Generating RSA key pair..." }
                 createPair(bitCount = serviceProperties.getOrDefault("bit-count", 2048))
                 println("Please follow the instructions on console and continue once you've done so.")
                 scanner.next()
@@ -74,15 +77,6 @@ class RsaService : Service {
         } catch (exception: Exception) {
             throw ExceptionInInitializerError(IOException("Error parsing RSA key pair: ${keyPath.toAbsolutePath()}", exception))
         }
-    }
-
-    override fun postLoad(server: org.alter.game.Server, world: World) {
-    }
-
-    override fun bindNet(server: org.alter.game.Server, world: World) {
-    }
-
-    override fun terminate(server: org.alter.game.Server, world: World) {
     }
 
     /**
@@ -118,7 +112,7 @@ class RsaService : Service {
             writer.println("modulus: " + publicKey.modulus.toString(radix))
             writer.close()
         } catch (e: Exception) {
-            logger.error(e.toString())
+            logger.error { e.toString() }
         }
 
         try {
@@ -134,7 +128,8 @@ class RsaService : Service {
 
     fun getModulus(): BigInteger = modulus
 
-    companion object : KLogging() {
+    companion object {
+        private val logger = KotlinLogging.logger {}
 
         @JvmStatic
         fun main(args: Array<String>) {
@@ -151,7 +146,7 @@ class RsaService : Service {
                 Files.createDirectory(directory)
             }
 
-            logger.info("Generating RSA key pair...")
+            logger.info { "Generating RSA key pair..." }
             service.createPair(bitCount)
         }
     }

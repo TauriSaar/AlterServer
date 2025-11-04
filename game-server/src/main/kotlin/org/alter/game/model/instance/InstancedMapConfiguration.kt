@@ -12,7 +12,7 @@ import java.util.*
  * @param bypassObjectChunkBounds
  * If true, objects that are found to exceed the bounds of its [Chunk] will
  * not throw an error - however the object will not be applied to the world's
- * [gg.rsmod.game.model.region.ChunkSet], so this flag should be used with
+ * [org.alter.game.model.region.ChunkSet], so this flag should be used with
  * that caveat in mind.
  *
  * Explanation:
@@ -30,11 +30,13 @@ import java.util.*
  *
  * @author Tom <rspsmods@gmail.com>
  */
-class InstancedMapConfiguration private constructor(val exitTile: Tile, val owner: PlayerUID?, val attributes: EnumSet<InstancedMapAttribute>,
-                                                    val bypassObjectChunkBounds: Boolean) {
-
+class InstancedMapConfiguration private constructor(
+    val exitTile: Tile,
+    val owner: PlayerUID?,
+    val attributes: EnumSet<InstancedMapAttribute>,
+    val bypassObjectChunkBounds: Boolean,
+) {
     class Builder {
-
         private var exitTile: Tile? = null
 
         private var owner: PlayerUID? = null
@@ -62,7 +64,10 @@ class InstancedMapConfiguration private constructor(val exitTile: Tile, val owne
             return this
         }
 
-        fun addAttribute(attribute: InstancedMapAttribute, vararg others: InstancedMapAttribute): Builder {
+        fun addAttribute(
+            attribute: InstancedMapAttribute,
+            vararg others: InstancedMapAttribute,
+        ): Builder {
             attributes.add(attribute)
             attributes.addAll(others)
             return this

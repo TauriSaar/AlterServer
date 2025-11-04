@@ -1,6 +1,7 @@
 package org.alter.game
 
 import org.alter.game.model.Tile
+import org.alter.game.saving.formats.SaveFormatType
 
 /**
  * Holds vital information that the game needs in order to run (properly).
@@ -28,10 +29,10 @@ import org.alter.game.model.Tile
  *
  * @param runEnergy if players' run energy will be deducted whilst running.
  *
- * @param gItemPublicDelay the amount of cycles for a [gg.rsmod.game.model.entity.GroundItem]
+ * @param gItemPublicDelay the amount of cycles for a [org.alter.game.model.entity.GroundItem]
  * to become public if it's owned by a player.
  *
- * @param gItemDespawnDelay the amount of cycles for a [gg.rsmod.game.model.entity.GroundItem]
+ * @param gItemDespawnDelay the amount of cycles for a [org.alter.game.model.entity.GroundItem]
  * to despawn.
  *
  * @param preloadMaps if true, all map data will be be loaded on start-up instead
@@ -39,8 +40,18 @@ import org.alter.game.model.Tile
  *
  * @author Tom <rspsmods@gmail.com>
  */
-data class GameContext(var initialLaunch: Boolean, val name: String, val revision: Int,
-                       val cycleTime: Int, val playerLimit: Int, val home: Tile,
-                       val skillCount: Int, val npcStatCount: Int, val runEnergy: Boolean,
-                       val gItemPublicDelay: Int, val gItemDespawnDelay: Int,
-                       val preloadMaps: Boolean)
+data class GameContext(
+    var initialLaunch: Boolean,
+    val name: String,
+    val revision: Int,
+    val saveFormat: SaveFormatType,
+    val cycleTime: Int,
+    val playerLimit: Int,
+    val home: Tile,
+    val skillCount: Int,
+    val npcStatCount: Int,
+    val runEnergy: Boolean,
+    val gItemPublicDelay: Int,
+    val gItemDespawnDelay: Int,
+    val preloadMaps: Boolean,
+)

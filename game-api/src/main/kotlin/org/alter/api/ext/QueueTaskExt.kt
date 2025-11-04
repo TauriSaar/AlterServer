@@ -1,22 +1,24 @@
 package org.alter.api.ext
 
-import org.alter.game.fs.def.ItemDef
-import org.alter.game.fs.def.NpcDef
-import org.alter.game.message.impl.ResumePauseButtonMessage
+import dev.openrune.cache.CacheManager.getItem
+import dev.openrune.cache.CacheManager.getNpc
+import net.rsprot.protocol.game.incoming.resumed.ResumePauseButton
+import org.alter.api.ClientScript
+import org.alter.api.CommonClientScripts
+import org.alter.api.InterfaceDestination
+import org.alter.api.Skills
 import org.alter.game.model.attr.INTERACTING_NPC_ATTR
-import org.alter.game.model.entity.Npc
 import org.alter.game.model.entity.Pawn
 import org.alter.game.model.entity.Player
 import org.alter.game.model.item.Item
 import org.alter.game.model.queue.QueueTask
-import org.alter.api.InterfaceDestination
-import org.alter.api.Skills
+import org.alter.rscm.RSCM.getRSCM
 
 /**
  * The child id of the chat box in the gameframe interface. This can change
  * with revision.
  */
-const val CHATBOX_CHILD = 559
+const val CHATBOX_CHILD = 566
 
 /**
  * The id for the appearance interface.
@@ -26,44 +28,22 @@ const val APPEARANCE_INTERFACE_ID = 679
 /**
  * The default action that will occur when interrupting or finishing a dialog.
  */
-private val closeDialog: QueueTask.() -> Unit = {
-    player.closeComponent(parent = 162, child = CHATBOX_CHILD)
-}
+private fun closeDialog(player: Player): QueueTask.() -> Unit =
+    {
+        player.closeComponent(parent = 162, child = CHATBOX_CHILD)
+    }
 
 /**
  * Invoked when input dialog queues are interrupted.
  */
-private val closeInput: QueueTask.() -> Unit = {
-    player.closeInputDialog()
-}
+private fun closeInput(player: Player): QueueTask.() -> Unit = {
+        player.closeInputDialog()
+    }
 
-/**
- * Invoked when the appearance input is interrupted.
- */
-private val closeAppearance: QueueTask.() -> Unit = {
+
+private fun closeAppearance(player: Player): QueueTask.() -> Unit = {
     player.closeInterface(APPEARANCE_INTERFACE_ID)
 }
-
-/**
- * Gets the [QueueTask.ctx] as a [Pawn].
- *
- * If [QueueTask.ctx] is not a [Pawn], a cast exception will be thrown.
- */
-inline val QueueTask.pawn: Pawn get() = ctx as Pawn
-
-/**
- * Gets the [QueueTask.ctx] as a [Player].
- *
- * If [QueueTask.ctx] is not a [Pawn], a cast exception will be thrown.
- */
-inline val QueueTask.player: Player get() = ctx as Player
-
-/**
- * Gets the [QueueTask.ctx] as an [Npc].
- *
- * If [QueueTask.ctx] is not a [Pawn], a cast exception will be thrown.
- */
-inline val QueueTask.npc: Npc get() = ctx as Npc
 
 /**
  * Prompts the player with options.
@@ -71,19 +51,31 @@ inline val QueueTask.npc: Npc get() = ctx as Npc
  * @return
  * The id of the option chosen. The id can range from [1] inclusive to [options.size] inclusive.
  */
-//suspend fun QueueTask.options(vararg options: String, title: String = "Select an Option", next: String = "Next Page", back: String = "Back", optionIndex: Int = 0): Int {
-suspend fun QueueTask.options(vararg options: String, title: String = "Select an Option"): Int {
-    player.sendTempVarbit(5983, 1)
-    player.runClientScript(2379)
+// suspend fun QueueTask.options(vararg options: String, title: String = "Select an Option", next: String = "Next Page", back: String = "Back", optionIndex: Int = 0): Int {
+suspend fun QueueTask.options(
+    player: Player,
+    vararg options: String,
+    title: String = "Select an Option",
+    fullSize: Boolean = true
+): Int {
+    player.runClientScript(CommonClientScripts.CHATBOX_RESET_BACKGROUND)
+    player.sendTempVarbit(10670, if (fullSize) 1 else 0)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 219)
-    player.runClientScript(58, title, options.joinToString("|"))
+    player.runClientScript(CommonClientScripts.CHATBOX_MULTI, title, options.joinToString("|"))
     player.setInterfaceEvents(interfaceId = 219, component = 1, from = 1, to = options.size, setting = 1)
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
-    return (requestReturnValue as? ResumePauseButtonMessage)?.slot ?: -1
+    return (requestReturnValue as? ResumePauseButton)?.sub ?: -1
 }
-suspend fun QueueTask.itemMessage(message: String, item: Int, amountOrZoom: Int = 1, wait: Int = 1) {
+
+suspend fun QueueTask.itemMessage(
+    player: Player,
+    message: String,
+    item: Int,
+    amountOrZoom: Int = 1,
+    wait: Int = 1,
+) {
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 193)
     player.setInterfaceEvents(interfaceId = 193, component = 0, range = 0..1, setting = 1)
     player.setComponentItem(interfaceId = 193, component = 1, item = item, amountOrZoom = amountOrZoom)
@@ -91,16 +83,21 @@ suspend fun QueueTask.itemMessage(message: String, item: Int, amountOrZoom: Int 
 
     wait(wait)
 }
-suspend fun QueueTask.interfaceOptions(vararg options: String, title: String): Int {
+
+suspend fun QueueTask.interfaceOptions(
+    player: Player,
+    vararg options: String,
+    title: String,
+): Int {
     player.openInterface(187, InterfaceDestination.MAIN_SCREEN)
-    player.runClientScript(217, title, options.joinToString("|"))
+    player.runClientScript(CommonClientScripts.INTERFACE_MENU, title, options.joinToString("|"))
     player.setInterfaceEvents(interfaceId = 187, component = 3, from = 0, to = options.size, setting = 1)
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 
-    return (requestReturnValue as? ResumePauseButtonMessage)?.slot ?: -1
+    return (requestReturnValue as? ResumePauseButton)?.sub ?: -1
 }
 
 /**
@@ -109,10 +106,13 @@ suspend fun QueueTask.interfaceOptions(vararg options: String, title: String): I
  * @return
  * The integer input.
  */
-suspend fun QueueTask.inputInt(description: String = "Enter amount"): Int {
-    player.runClientScript(108, description)
+suspend fun QueueTask.inputInt(
+    player: Player,
+    description: String = "Enter amount"
+): Int {
+    player.runClientScript(ClientScript("meslayer_mode7"), description)
 
-    terminateAction = closeInput
+    terminateAction = closeInput(player)
     waitReturnValue()
     terminateAction!!(this)
 
@@ -126,10 +126,12 @@ suspend fun QueueTask.inputInt(description: String = "Enter amount"): Int {
  *
  * @return the string input.
  */
-suspend fun QueueTask.inputString(description: String = "Enter text"): String {
-    player.runClientScript(110, description)
-
-    terminateAction = closeInput
+suspend fun QueueTask.inputString(
+    player: Player,
+    description: String = "Enter text"
+): String {
+    player.runClientScript(ClientScript("meslayer_mode9"), description)
+    terminateAction = closeInput(player)
     waitReturnValue()
     terminateAction!!(this)
 
@@ -145,10 +147,12 @@ suspend fun QueueTask.inputString(description: String = "Enter text"): String {
  * @return the player with the respective username, null if the player is not
  * online.
  */
-suspend fun QueueTask.inputPlayer(description: String = "Enter name"): Player? {
-    player.runClientScript(109, description)
-
-    terminateAction = closeInput
+suspend fun QueueTask.inputPlayer(
+    player: Player,
+    description: String = "Enter name"
+): Player? {
+    player.runClientScript(ClientScript("meslayer_mode8"), description)
+    terminateAction = closeInput(player)
     waitReturnValue()
     terminateAction!!(this)
 
@@ -162,10 +166,13 @@ suspend fun QueueTask.inputPlayer(description: String = "Enter name"): Player? {
  * @return
  * The selected item's id.
  */
-suspend fun QueueTask.searchItemInput(message: String): Int {
-    player.runClientScript(750, message, 1, -1)
+suspend fun QueueTask.searchItemInput(
+    player: Player,
+    message: String
+): Int {
+    player.runClientScript(CommonClientScripts.GE_SEARCH_ITEMS, message, 1, -1)
 
-    terminateAction = closeInput
+    terminateAction = closeInput(player)
     waitReturnValue()
 
     return requestReturnValue as? Int ?: -1
@@ -179,23 +186,31 @@ suspend fun QueueTask.searchItemInput(message: String): Int {
  * @return
  * The selected item's id.
  */
-suspend fun QueueTask.searchItemInputT(message: String): Int {
-    player.runClientScript(750, message, 0, -1)
+suspend fun QueueTask.searchItemInputT(
+    player: Player,
+    message: String
+): Int {
+    player.runClientScript(CommonClientScripts.GE_SEARCH_ITEMS, message, 0, -1)
 
-    terminateAction = closeInput
+    terminateAction = closeInput(player)
     waitReturnValue()
 
     return requestReturnValue as? Int ?: -1
 }
-suspend fun QueueTask.searchItemWithPrevious(message: String): Int {
-    player.setVarbit(4439, 1)
-    player.runClientScript(5730, "", "", 30474256, 30474258)
-    player.runClientScript(5730, "Click the icon on the left to search for items.", "", 30474266, 30474268)
-    player.runClientScript(750, message, 1, -1, 1)
-    player.runClientScript(4517, 0, 100, 75)
-    player.runClientScript(4518, 100, 100)
 
-    terminateAction = closeInput
+suspend fun QueueTask.searchItemWithPrevious(
+    player: Player,
+    message: String
+): Int {
+    player.setVarbit(4439, 1)
+    player.message("All these Scripts are wrong for searchItemWithPrevious remember to set them")
+    player.runClientScript(CommonClientScripts.GE_OFFER_SET_DESC, "", "", 30474256, 30474258)
+    player.runClientScript(CommonClientScripts.GE_OFFER_SET_DESC, "Click the icon on the left to search for items.", "", 30474266, 30474268)
+    player.runClientScript(CommonClientScripts.GE_SEARCH_ITEMS, message, 1, -1, 1)
+    player.runClientScript(ClientScript(id = 4517), 0, 100, 75)
+    player.runClientScript(ClientScript(id = 4518), 100, 100)
+
+    terminateAction = closeInput(player)
     waitReturnValue()
 
     return requestReturnValue as? Int ?: -1
@@ -211,19 +226,24 @@ suspend fun QueueTask.searchItemWithPrevious(message: String): Int {
  * The spacing, in pixels, in between each line that will be rendered on the
  * dialog box.
  */
-suspend fun QueueTask.messageBox(message: String, lineSpacing: Int = 31, continues: Boolean = false) {
+suspend fun QueueTask.messageBox(
+    player: Player,
+    message: String,
+    lineSpacing: Int = 31,
+    continues: Boolean = false,
+) {
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 229)
     player.setComponentText(interfaceId = 229, component = 1, text = message)
-    player.runClientScript(600, 1, 1, lineSpacing, 15007745)
+    player.runClientScript(CommonClientScripts.SET_TEXT_ALIGN, 1, 1, lineSpacing, 15007745)
     player.setInterfaceEvents(interfaceId = 229, component = 2, range = -1..-1, setting = 1)
 
-    if(continues){
+    if (continues) {
         player.setComponentText(interfaceId = 229, component = 2, text = "")
         return
     }
     player.setComponentText(interfaceId = 229, component = 2, text = "Click here to continue")
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
@@ -245,21 +265,34 @@ suspend fun QueueTask.messageBox(message: String, lineSpacing: Int = 31, continu
  * @title
  * The title of the dialog, if left as null, the npc's name will be used.
  */
-suspend fun QueueTask.chatNpc(message: String, npc: Int = -1, animation: Int = 588, title: String? = null) {
-    val npcId = if (npc != -1) npc else player.attr[INTERACTING_NPC_ATTR]?.get()?.getTransform(player) ?: throw RuntimeException("Npc id must be manually set as the player is not interacting with an npc.")
-    val dialogTitle = title ?: player.world.definitions.get(NpcDef::class.java, npcId).name
+suspend fun QueueTask.chatNpc(
+    player: Player,
+    message: String,
+    npc: Int = -1,
+    animation: Int = 588,
+    title: String? = null,
+) {
+    val npcId =
+        if (npc != -1) {
+            npc
+        } else {
+            player.attr[INTERACTING_NPC_ATTR]?.get()?.getTransform(
+                player,
+            ) ?: throw RuntimeException("Npc id must be manually set as the player is not interacting with an npc.")
+        }
+    val dialogTitle = title ?: getNpc(npcId).name
 
-    player.runClientScript(2379)
+    player.runClientScript(CommonClientScripts.CHATBOX_RESET_BACKGROUND)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 231)
     player.setComponentNpcHead(interfaceId = 231, component = 2, npc = npcId)
     player.setComponentAnim(interfaceId = 231, component = 2, anim = animation)
     player.setComponentText(interfaceId = 231, component = 4, text = dialogTitle)
     player.setComponentText(interfaceId = 231, component = 6, text = message)
-    player.runClientScript(600, 1, 1, 16, 15138822)
+    player.runClientScript(CommonClientScripts.SET_TEXT_ALIGN, 1, 1, 16, 15138822)
     player.setInterfaceEvents(interfaceId = 231, component = 4, from = -1, to = -1, setting = 1)
     player.setComponentText(interfaceId = 231, component = 5, text = "Click here to continue")
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
@@ -271,20 +304,25 @@ suspend fun QueueTask.chatNpc(message: String, npc: Int = -1, animation: Int = 5
  * The message to render on the dialog box.
 */
 
-suspend fun QueueTask.chatPlayer(message: String, animation: Int = 588, title: String? = null) {
+suspend fun QueueTask.chatPlayer(
+    player: Player,
+    message: String,
+    animation: Int = 588,
+    title: String? = null,
+) {
     val dialogTitle = title ?: player.username
 
-    player.runClientScript(2379)
+    player.runClientScript(CommonClientScripts.CHATBOX_RESET_BACKGROUND)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 217)
     player.setComponentPlayerHead(interfaceId = 217, component = 2)
     player.setComponentAnim(interfaceId = 217, component = 2, anim = animation)
     player.setComponentText(interfaceId = 217, component = 4, text = dialogTitle)
     player.setComponentText(interfaceId = 217, component = 6, text = message)
-    player.runClientScript(600, 1, 1, 16, 14221316)
+    player.runClientScript(CommonClientScripts.SET_TEXT_ALIGN, 1, 1, 16, 14221316)
     player.setInterfaceEvents(interfaceId = 217, component = 3, from = -1, to = -1, setting = 1)
     player.setComponentText(interfaceId = 217, component = 5, text = "Click here to continue")
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
@@ -305,52 +343,76 @@ suspend fun QueueTask.chatPlayer(message: String, animation: Int = 588, title: S
  * Item dialog boxes can have multiple options be shown instead of the default
  * 'Click here to continue'.
  */
-suspend fun QueueTask.itemMessageBox(message: String, item: Int, amountOrZoom: Int = 1, vararg options: String = arrayOf("Click here to continue")) {
+suspend fun QueueTask.itemMessageBox(
+    player: Player,
+    message: String,
+    item: String,
+    amountOrZoom: Int = 1,
+    vararg options: String = arrayOf("Click here to continue"),
+) {
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 193)
     player.setInterfaceEvents(interfaceId = 193, component = 0, range = 0..1, setting = 1)
-    player.setComponentItem(interfaceId = 193, component = 1, item = item, amountOrZoom = amountOrZoom)
+    player.setComponentItem(interfaceId = 193, component = 1, item = getRSCM(item), amountOrZoom = amountOrZoom)
     player.setComponentText(interfaceId = 193, component = 2, text = message)
-    player.runClientScript(2868, *options)
+    player.runClientScript(CommonClientScripts.SET_OPTIONS, *options)
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
 
-suspend fun QueueTask.doubleItemMessageBox(message: String, item1: Int, item2: Int, amount1: Int = 1, amount2: Int = 1) {
-    player.setComponentItem(interfaceId = 11, component = 1, item = item1, amountOrZoom = amount1)
+suspend fun QueueTask.doubleItemMessageBox(
+    player: Player,
+    message: String,
+    item1: String,
+    item2: String,
+    amount1: Int = 1,
+    amount2: Int = 1,
+) {
+    player.setComponentItem(interfaceId = 11, component = 1, item = getRSCM(item1), amountOrZoom = amount1)
     player.setComponentText(interfaceId = 11, component = 2, text = message)
-    player.setComponentItem(interfaceId = 11, component = 3, item = item2, amountOrZoom = amount2)
+    player.setComponentItem(interfaceId = 11, component = 3, item = getRSCM(item2), amountOrZoom = amount2)
     player.setComponentText(interfaceId = 11, component = 4, text = "Click here to continue")
     player.setInterfaceEvents(interfaceId = 11, component = 4, range = -1..-1, setting = 1)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 11)
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
 
-suspend fun QueueTask.destroyItem(title: String = "Are you sure you want to destroy this item?", note: String, item: Int, amount: Int): Boolean {
-    player.runClientScript(2379)
+suspend fun QueueTask.destroyItem(
+    player: Player,
+    title: String = "Are you sure you want to destroy this item?",
+    note: String,
+    item: Int,
+    amount: Int,
+): Boolean {
+    player.runClientScript(CommonClientScripts.CHATBOX_RESET_BACKGROUND)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 584)
-    player.runClientScript(814, item, amount, 0, title, note)
+    player.runClientScript(ClientScript("confirmdestroy_init"), item, amount, 0, title, note)
     player.setInterfaceEvents(interfaceId = 584, component = 0, range = 0..1, setting = 1)
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 
-    val msg = requestReturnValue as? ResumePauseButtonMessage
-    return msg?.slot == 1
+    val msg = requestReturnValue as? ResumePauseButton
+    return msg?.sub == 1
 }
 
-fun QueueTask.selectAppearance() {
+fun QueueTask.selectAppearance(player: Player) {
     player.openInterface(APPEARANCE_INTERFACE_ID, InterfaceDestination.MAIN_SCREEN)
 }
 
-suspend fun QueueTask.levelUpMessageBox(skill: Int, levelIncrement: Int) {
+suspend fun QueueTask.levelUpMessageBox(
+    player: Player,
+    skill: Int,
+    levelIncrement: Int,
+) {
     if (skill != Skills.HUNTER) {
-        val children = mapOf(
+        val children =
+            mapOf(
                 Skills.AGILITY to 4,
                 Skills.ATTACK to 6,
                 Skills.CONSTRUCTION to 9,
@@ -372,7 +434,8 @@ suspend fun QueueTask.levelUpMessageBox(skill: Int, levelIncrement: Int) {
                 Skills.SMITHING to 45,
                 Skills.STRENGTH to 47,
                 Skills.THIEVING to 49,
-                Skills.WOODCUTTING to 51)
+                Skills.WOODCUTTING to 51,
+            )
 
         children.forEach { key, value ->
             player.setComponentHidden(interfaceId = 233, component = value, hidden = skill != key)
@@ -383,8 +446,16 @@ suspend fun QueueTask.levelUpMessageBox(skill: Int, levelIncrement: Int) {
         val vowel = initialChar == 'a' || initialChar == 'e' || initialChar == 'i' || initialChar == 'o' || initialChar == 'u'
         val levelFormat = if (levelIncrement == 1) (if (vowel) "an" else "a") else "$levelIncrement"
 
-        player.setComponentText(interfaceId = 233, component = 1, text = "<col=000080>Congratulations, you just advanced $levelFormat $skillName ${"level".pluralSuffix(levelIncrement)}.")
-        player.setComponentText(interfaceId = 233, component = 2, text = "Your $skillName level is now ${player.getSkills().getBaseLevel(skill)}.")
+        player.setComponentText(
+            interfaceId = 233,
+            component = 1,
+            text = "<col=000080>Congratulations, you just advanced $levelFormat $skillName ${"level".pluralSuffix(levelIncrement)}.",
+        )
+        player.setComponentText(
+            interfaceId = 233,
+            component = 2,
+            text = "Your $skillName level is now ${player.getSkills().getBaseLevel(skill)}.",
+        )
         player.setComponentText(interfaceId = 233, component = 3, text = "Click here to continue")
         player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 233)
     } else {
@@ -396,13 +467,18 @@ suspend fun QueueTask.levelUpMessageBox(skill: Int, levelIncrement: Int) {
         player.setInterfaceEvents(interfaceId = 193, component = 0, from = -1, to = 1, setting = 0)
         player.setComponentItem(interfaceId = 193, component = 1, item = 9951, amountOrZoom = 400)
 
-        player.setComponentText(interfaceId = 193, component = 2, text = "<col=000080>Congratulations, you've just advanced $levelFormat Hunter ${"level".pluralSuffix(levelIncrement)}." +
-                "<col=000000><br><br>Your Hunter level is now ${player.getSkills().getBaseLevel(skill)}.")
-        player.runClientScript(2868, "Click here to continue")
+        player.setComponentText(
+            interfaceId = 193,
+            component = 2,
+            text =
+                "<col=000080>Congratulations, you've just advanced $levelFormat Hunter ${"level".pluralSuffix(levelIncrement)}." +
+                    "<col=000000><br><br>Your Hunter level is now ${player.getSkills().getBaseLevel(skill)}.",
+        )
+        player.runClientScript(CommonClientScripts.SET_OPTIONS, "Click here to continue")
         player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 193)
     }
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 }
@@ -428,9 +504,15 @@ suspend fun QueueTask.levelUpMessageBox(skill: Int, levelIncrement: Int) {
  * @return
  * The id of the option chosen. The id can range from [1] inclusive to [9] inclusive.
  */
-suspend fun QueueTask.produceItemBox(vararg items: Int, title: String = "What would you like to make?", maxProducable: Int = player.inventory.capacity, logic: Player.(Int, Int) -> Unit) {
+suspend fun QueueTask.produceItemBox(
+    player: Player,
+    vararg items: Int,
+    title: String = "What would you like to make?",
+    maxProducable: Int = player.inventory.capacity,
+    logic: Player.(Int, Int) -> Unit,
+) {
     val defs = player.world.definitions
-    val itemDefs = items.map { defs.get(ItemDef::class.java, it) }
+    val itemDefs = items.map { getItem(it) }
 
     val baseChild = 14
     val itemArray = Array(10) { -1 }
@@ -444,20 +526,21 @@ suspend fun QueueTask.produceItemBox(vararg items: Int, title: String = "What wo
 
     player.sendTempVarbit(5983, 1)
     player.openInterface(parent = 162, child = CHATBOX_CHILD, interfaceId = 270)
-    player.runClientScript(2046, 0, "$title${nameArray.joinToString("")}", maxProducable, *itemArray)
+    player.runClientScript(CommonClientScripts.SKILL_MULTI_SETUP, 0, "$title${nameArray.joinToString("")}", maxProducable, *itemArray)
 
-    terminateAction = closeDialog
+    terminateAction = closeDialog(player)
     waitReturnValue()
     terminateAction!!(this)
 
-    val msg = requestReturnValue as? ResumePauseButtonMessage ?: return
-    val child = msg.component
+    val msg = requestReturnValue as? ResumePauseButton ?: return
+    val child = msg.componentId
 
-    if (child < baseChild || child >= baseChild + items.size)
+    if (child < baseChild || child >= baseChild + items.size) {
         return
+    }
 
     val item = items[child - baseChild]
-    val qty = msg.slot
+    val qty = msg.sub
 
     logic(player, item, qty)
 }

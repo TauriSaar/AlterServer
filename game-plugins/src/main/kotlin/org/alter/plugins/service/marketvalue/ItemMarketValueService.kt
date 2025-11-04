@@ -1,24 +1,28 @@
 package org.alter.plugins.service.marketvalue
 
+import dev.openrune.cache.CacheManager.getItems
+import dev.openrune.cache.CacheManager.itemSize
+import gg.rsmod.util.ServerProperties
+import io.github.oshai.kotlinlogging.KotlinLogging
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import org.alter.game.Server
-import org.alter.game.fs.def.ItemDef
 import org.alter.game.model.World
 import org.alter.game.service.Service
-import gg.rsmod.util.ServerProperties
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
-import mu.KLogging
 
 /**
  * @author Tom <rspsmods@gmail.com>
  */
 class ItemMarketValueService : Service {
-
     private val values = Int2IntOpenHashMap()
 
-    override fun init(server: Server, world: World, serviceProperties: ServerProperties) {
-        val items = world.definitions.getCount(ItemDef::class.java)
+    override fun init(
+        server: Server,
+        world: World,
+        serviceProperties: ServerProperties,
+    ) {
+        val items = itemSize()
         for (i in 0 until items) {
-            val def = world.definitions.getNullable(ItemDef::class.java, i) ?: continue
+            val def = getItems().get(i) ?: continue
 
             if (!def.noted && def.name.isNotBlank()) {
                 values[i] = def.cost
@@ -27,16 +31,7 @@ class ItemMarketValueService : Service {
                 }
             }
         }
-        logger.info("Loaded {} item values.", values.size)
-    }
-
-    override fun postLoad(server: Server, world: World) {
-    }
-
-    override fun bindNet(server: Server, world: World) {
-    }
-
-    override fun terminate(server: Server, world: World) {
+        logger.info { "Loaded ${values.size} item values." }
     }
 
     fun get(item: Int): Int {
@@ -47,5 +42,5 @@ class ItemMarketValueService : Service {
         return 0
     }
 
-    companion object : KLogging()
+    private val logger = KotlinLogging.logger {}
 }

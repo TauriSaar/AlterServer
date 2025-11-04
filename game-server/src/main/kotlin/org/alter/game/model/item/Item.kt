@@ -1,14 +1,13 @@
 package org.alter.game.model.item
 
-import com.google.common.base.MoreObjects
-import org.alter.game.fs.DefinitionSet
-import org.alter.game.fs.def.ItemDef
+import dev.openrune.cache.CacheManager.getItem
+import gg.rsmod.util.toStringHelper
+import org.bson.Document
 
 /**
  * @author Tom <rspsmods@gmail.com>
  */
 class Item(val id: Int, var amount: Int = 1) {
-
     constructor(other: Item) : this(other.id, other.amount) {
         copyAttr(other)
     }
@@ -24,9 +23,9 @@ class Item(val id: Int, var amount: Int = 1) {
      * If this item does not have a noted link item id, it will return a new [Item]
      * with the same [Item.id].
      */
-    fun toNoted(definitions: DefinitionSet): Item {
-        val def = getDef(definitions)
-        return if (def.noteTemplateId == 0 && def.noteLinkId > 0) Item(def.noteLinkId, amount).copyAttr(this) else Item(this).copyAttr(this)
+    fun toNoted(): Item {
+        val def = getDef()
+        return if (def.noteTemplateId == -1 && def.noteLinkId > -1) Item(def.noteLinkId, amount).copyAttr(this) else Item(this).copyAttr(this)
     }
 
     /**
@@ -34,8 +33,8 @@ class Item(val id: Int, var amount: Int = 1) {
      * If this item does not have a unnoted link item id, it will return a new [Item]
      * with the same [Item.id].
      */
-    fun toUnnoted(definitions: DefinitionSet): Item {
-        val def = getDef(definitions)
+    fun toUnnoted(): Item {
+        val def = getDef()
         return if (def.noteTemplateId > 0) Item(def.noteLinkId, amount).copyAttr(this) else Item(this).copyAttr(this)
     }
 
@@ -43,9 +42,9 @@ class Item(val id: Int, var amount: Int = 1) {
      * Get the name of this item. If this item is noted this method will use
      * its un-noted template and get the name for said template.
      */
-    fun getName(definitions: DefinitionSet): String = toUnnoted(definitions).getDef(definitions).name
+    fun getName(): String = toUnnoted().getDef().name
 
-    fun getDef(definitions: DefinitionSet) = definitions.get(ItemDef::class.java, id)
+    fun getDef() = getItem(id)
 
     /**
      * Returns true if [attr] contains any value.
@@ -54,7 +53,10 @@ class Item(val id: Int, var amount: Int = 1) {
 
     fun getAttr(attrib: ItemAttribute): Int? = attr[attrib]
 
-    fun putAttr(attrib: ItemAttribute, value: Int): Item {
+    fun putAttr(
+        attrib: ItemAttribute,
+        value: Int,
+    ): Item {
         attr[attrib] = value
         return this
     }
@@ -69,5 +71,37 @@ class Item(val id: Int, var amount: Int = 1) {
         return this
     }
 
-    override fun toString(): String = MoreObjects.toStringHelper(this).add("id", id).add("amount", amount).toString()
+    override fun toString(): String = toStringHelper().add("id", id).add("amount", amount).toString()
+
+    fun asDocument(): Document {
+        return Document("id", id).apply {
+            append("amount", amount)
+
+            if (attr.isNotEmpty()) {
+                val attributesDoc = attr.map { (attribute, value) ->
+                    attribute.name to value
+                }.toMap()
+                append("attributes", attributesDoc)
+            }
+        }
+    }
+
+    companion object {
+        fun fromDocument(doc: Document): Item {
+            val id = doc.getInteger("id")
+            val amount = doc.getInteger("amount")
+            val item = Item(id, amount)
+
+            val attributesDoc = doc.get("attributes", Document::class.java)
+            attributesDoc?.forEach { (key, value) ->
+                if (value is Int) {
+                    val attribute = ItemAttribute.valueOf(key)
+                    item.putAttr(attribute, value)
+                }
+            }
+
+            return item
+        }
+    }
+
 }

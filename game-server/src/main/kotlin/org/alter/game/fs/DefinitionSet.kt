@@ -1,24 +1,17 @@
 package org.alter.game.fs
 
-import org.alter.game.fs.def.*
-import org.alter.game.model.Direction
+import dev.openrune.cache.*
+import dev.openrune.cache.filestore.loadLocations
+import dev.openrune.cache.filestore.loadTerrain
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.alter.game.model.Tile
 import org.alter.game.model.World
-import org.alter.game.model.collision.CollisionManager
-import org.alter.game.model.collision.CollisionUpdate
+import org.alter.game.model.collision.BLOCKED_TILE
+import org.alter.game.model.collision.BRIDGE_TILE
 import org.alter.game.model.entity.StaticObject
 import org.alter.game.model.region.ChunkSet
 import org.alter.game.service.xtea.XteaKeyService
-import io.netty.buffer.Unpooled
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
-import mu.KLogging
-import net.runelite.cache.ConfigType
-import net.runelite.cache.IndexType
-import net.runelite.cache.definitions.loaders.LocationsLoader
-import net.runelite.cache.definitions.loaders.MapLoader
-import net.runelite.cache.fs.Store
-import java.io.FileNotFoundException
+import org.rsmod.routefinder.flag.CollisionFlag
 import java.io.IOException
 
 /**
@@ -28,65 +21,13 @@ import java.io.IOException
  * @author Tom <rspsmods@gmail.com>
  */
 class DefinitionSet {
-
-    /**
-     * A [Map] holding all definitions with their [Class] as key.
-     */
-    private val defs = Object2ObjectOpenHashMap<Class<out Definition>, Map<Int, *>>()
-
     private var xteaService: XteaKeyService? = null
 
-    fun loadAll(store: Store) {
-        /*
-         * Load [AnimDef]s.
-         */
-        load(store, AnimDef::class.java)
-        logger.info("Loaded ${getCount(AnimDef::class.java)} animation definitions.")
-
-        /*
-         * Load [VarpDef]s.
-         */
-        load(store, VarpDef::class.java)
-        logger.info("Loaded ${getCount(VarpDef::class.java)} varp definitions.")
-
-        /*
-         * Load [VarbitDef]s.
-         */
-        load(store, VarbitDef::class.java)
-        logger.info("Loaded ${getCount(VarbitDef::class.java)} varbit definitions.")
-
-        /*
-         * Load [EnumDef]s.
-         */
-        load(store, EnumDef::class.java)
-        logger.info("Loaded ${getCount(EnumDef::class.java)} enum definitions.")
-
-        /*
-         * Load [StructDef]s.
-         */
-        load(store, StructDef::class.java)
-        logger.info("Loaded ${getCount(StructDef::class.java)} struct definitions.")
-
-        /*
-         * Load [NpcDef]s.
-         */
-        load(store, NpcDef::class.java)
-        logger.info("Loaded ${getCount(NpcDef::class.java)} npc definitions.")
-
-        /*
-         * Load [ItemDef]s.
-         */
-        load(store, ItemDef::class.java)
-        logger.info("Loaded ${getCount(ItemDef::class.java)} item definitions.")
-
-        /*
-         * Load [ObjectDef]s.
-         */
-        load(store, ObjectDef::class.java)
-        logger.info("Loaded ${getCount(ObjectDef::class.java)} object definitions.")
-    }
-
-    fun loadRegions(world: World, chunks: ChunkSet, regions: IntArray) {
+    fun loadRegions(
+        world: World,
+        chunks: ChunkSet,
+        regions: IntArray,
+    ) {
         val start = System.currentTimeMillis()
 
         var loaded = 0
@@ -100,107 +41,57 @@ class DefinitionSet {
         logger.info { "Loaded $loaded regions in ${System.currentTimeMillis() - start}ms" }
     }
 
-    fun <T : Definition> load(store: Store, type: Class<out T>) {
-        val configType: ConfigType = when (type) {
-            VarpDef::class.java -> ConfigType.VARPLAYER
-            VarbitDef::class.java -> ConfigType.VARBIT
-            EnumDef::class.java -> ConfigType.ENUM
-            StructDef::class.java -> ConfigType.STRUCT
-            NpcDef::class.java -> ConfigType.NPC
-            ObjectDef::class.java -> ConfigType.OBJECT
-            ItemDef::class.java -> ConfigType.ITEM
-            AnimDef::class.java -> ConfigType.SEQUENCE
-            else -> throw IllegalArgumentException("Unhandled class type ${type::class.java}.")
-        }
-        val configs = store.getIndex(IndexType.CONFIGS) ?: throw FileNotFoundException("Cache was not found.")
-        val archive = configs.getArchive(configType.id)!!
-        val files = archive.getFiles(store.storage.loadArchive(archive)!!).files
-
-        val definitions = Int2ObjectOpenHashMap<T?>(files.size + 1)
-        for (i in 0 until files.size) {
-            val def = createDefinition(type, files[i].fileId, files[i].contents)
-            definitions[files[i].fileId] = def
-        }
-        defs[type] = definitions
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    fun <T : Definition> createDefinition(type: Class<out T>, id: Int, data: ByteArray): T {
-        val def: Definition = when (type) {
-            VarpDef::class.java -> VarpDef(id)
-            VarbitDef::class.java -> VarbitDef(id)
-            EnumDef::class.java -> EnumDef(id)
-            StructDef::class.java -> StructDef(id)
-            NpcDef::class.java -> NpcDef(id)
-            ObjectDef::class.java -> ObjectDef(id)
-            ItemDef::class.java -> ItemDef(id)
-            AnimDef::class.java -> AnimDef(id)
-            else -> throw IllegalArgumentException("Unhandled class type ${type::class.java}.")
-        }
-
-        val buf = Unpooled.wrappedBuffer(data)
-        def.decode(buf)
-        buf.release()
-        return def as T
-    }
-
-    fun getCount(type: Class<*>) = defs[type]!!.size
-
-    @Suppress("UNCHECKED_CAST")
-    fun <T : Definition> get(type: Class<out T>, id: Int): T {
-        return (defs[type]!!)[id] as T
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    fun <T : Definition> getNullable(type: Class<out T>, id: Int): T? {
-        return (defs[type]!!)[id] as T?
-    }
-
     /**
      * Creates an 8x8 [gg.rsmod.game.model.region.Chunk] region.
      */
-    fun createRegion(world: World, id: Int): Boolean {
+    fun createRegion(
+        world: World,
+        id: Int,
+    ): Boolean {
         if (xteaService == null) {
             xteaService = world.getService(XteaKeyService::class.java)
         }
 
-        val regionIndex = world.filestore.getIndex(IndexType.MAPS)
-
         val x = id shr 8
-        val z = id and 0xFF
+        val y = id and 0xFF
 
-        val mapArchive = regionIndex.findArchiveByName("m${x}_$z") ?: return false
-        val landArchive = regionIndex.findArchiveByName("l${x}_$z") ?: return false
+        val mapData = CacheManager.cache.data(MAPS, "m${x}_$y") ?: return false
 
-        val mapData = mapArchive.decompress(world.filestore.storage.loadArchive(mapArchive))
-        if (mapData == null) {
-            logger.error { "Map data null for region $id ($x, $z)" }
-            return false
+        val baseX: Int = id shr 8 and 255 shl 6
+        val baseZ: Int = id and 255 shl 6
+
+        // Allocates all of the chunks within the region
+        // TODO only allocate if the tiles are walkable.
+        //val baseX = x * 64 // TODO perhaps just call cacheRegion.baseX
+        //val baseZ = z * 64 // TODO perhaps just call cacheRegion.baseY
+        for (cx in 0 until 8) {
+            for (cz in 0 until 8) {
+                val chunkBaseX = baseX + cx * 8
+                val chunkBaseZ = baseZ + cz * 8
+                for (level in 0 until 4) {
+//                    world.collision.add(chunkBaseX, chunkBaseZ, level, 0)
+                    world.collision.allocateIfAbsent(chunkBaseX, chunkBaseZ, level)
+                }
+            }
         }
-        val mapDefinition = MapLoader().load(x, z, mapData)
-
-        val cacheRegion = net.runelite.cache.region.Region(id)
-        cacheRegion.loadTerrain(mapDefinition)
 
         val blocked = hashSetOf<Tile>()
         val bridges = hashSetOf<Tile>()
+
+        val tiles = loadTerrain(mapData)
+
         for (height in 0 until 4) {
             for (lx in 0 until 64) {
-                for (lz in 0 until 64) {
-                    val tileSetting = cacheRegion.getTileSetting(height, lx, lz)
-                    val tile = Tile(cacheRegion.baseX + lx, cacheRegion.baseY + lz, height)
-
-                    if ((tileSetting.toInt() and CollisionManager.BLOCKED_TILE) == CollisionManager.BLOCKED_TILE) {
-                        blocked.add(tile)
+                for (ly in 0 until 64) {
+                    val bridge = tiles[1][lx][ly].settings.toInt() and BRIDGE_TILE != 0
+                    if (bridge) {
+                        bridges.add(Tile(baseX + lx, baseZ + ly, height))
                     }
-
-                    if ((tileSetting.toInt() and CollisionManager.BRIDGE_TILE) == CollisionManager.BRIDGE_TILE) {
-                        bridges.add(tile)
-                        /*
-                         * We don't want the bottom of the bridge to be blocked,
-                         * so remove the blocked tile if applicable.
-                         */
-                        blocked.remove(tile.transform(-1))
+                    val blockedTile = tiles[height][lx][ly].settings.toInt() and BLOCKED_TILE != 0
+                    if (blockedTile) {
+                        val level = if (bridge) (height - 1) else height
+                        if (level < 0) continue
+                        blocked.add(Tile(baseX + lx, baseZ + ly, level))
                     }
                 }
             }
@@ -209,14 +100,19 @@ class DefinitionSet {
         /*
          * Apply the blocked tiles to the collision detection.
          */
-        val blockedTileBuilder = CollisionUpdate.Builder()
-        blockedTileBuilder.setType(CollisionUpdate.Type.ADD)
         blocked.forEach { tile ->
-            world.chunks.getOrCreate(tile).blockedTiles.add(tile)
-            blockedTileBuilder.putTile(tile, false, *Direction.NESW)
+            world.chunks.getOrCreate(tile)
+            world.collision.add(tile.x, tile.z, tile.height, CollisionFlag.BLOCK_WALK)
         }
-        world.collision.applyUpdate(blockedTileBuilder.build())
-
+        /**
+         * EDIT: turns out i was wrong. the assumption made here didn't pan out as expected. the bandos godwars room door ended up having different flags to before.
+         *
+         * instead, i just use
+         * world.collisionFlags.applyUpdate(update)
+         *
+         * like in the other places, and that works
+         *
+         */
         if (xteaService == null) {
             /*
              * If we don't have an [XteaKeyService], then we assume we don't
@@ -231,25 +127,28 @@ class DefinitionSet {
 
         val keys = xteaService?.get(id) ?: XteaKeyService.EMPTY_KEYS
         try {
-            val landData = landArchive.decompress(world.filestore.storage.loadArchive(landArchive), keys)
-            val locDef = LocationsLoader().load(x, z, landData)
-            cacheRegion.loadLocations(locDef)
-
-            cacheRegion.locations.forEach { loc ->
-                val tile = Tile(loc.position.x, loc.position.y, loc.position.z)
-                if (bridges.contains(tile.transform(1))) {
-                    return@forEach
-                }
-                val obj = StaticObject(loc.id, loc.type, loc.orientation, if (bridges.contains(tile)) tile.transform(-1) else tile)
-                world.chunks.getOrCreate(tile).addEntity(world, obj, obj.tile)
+            val landData = CacheManager.cache.data(MAPS, "l${x}_$y", keys) ?: return false
+            loadLocations(landData) { loc ->
+                val tile =
+                    Tile(
+                        baseX + loc.localX,
+                        baseZ + loc.localY,
+                        loc.height,
+                    )
+                val hasBridge = bridges.contains(tile)
+                if (hasBridge && loc.height == 0) return@loadLocations
+                val adjustedTile = if (bridges.contains(tile)) tile.transform(-1) else tile
+                val obj = StaticObject(loc.id, loc.type, loc.orientation, adjustedTile)
+                world.chunks.getOrCreate(adjustedTile).addEntity(world, obj, adjustedTile)
             }
             return true
         } catch (e: IOException) {
-            e.printStackTrace()
-            logger.error("Could not decrypt map region {}.", id)
+            logger.error { "${"Could not decrypt map region {}."} $id" }
             return false
         }
     }
 
-    companion object : KLogging()
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
 }

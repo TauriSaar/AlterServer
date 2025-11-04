@@ -1,5 +1,9 @@
 package org.alter.api.ext
 
+import org.alter.api.BonusSlot
+import org.alter.api.HitType
+import org.alter.api.HitbarType
+import org.alter.api.PrayerIcon
 import org.alter.game.model.Hit
 import org.alter.game.model.attr.*
 import org.alter.game.model.entity.GameObject
@@ -7,12 +11,9 @@ import org.alter.game.model.entity.Npc
 import org.alter.game.model.entity.Pawn
 import org.alter.game.model.entity.Player
 import org.alter.game.model.item.Item
+import org.alter.game.model.move.stopMovement
 import org.alter.game.model.timer.FROZEN_TIMER
 import org.alter.game.model.timer.STUN_TIMER
-import org.alter.api.BonusSlot
-import org.alter.api.HitType
-import org.alter.api.HitbarType
-import org.alter.api.PrayerIcon
 
 fun Pawn.getCommandArgs(): Array<String> = attr[COMMAND_ARGS_ATTR]!!
 
@@ -30,23 +31,33 @@ fun Pawn.getInteractingGameObj(): GameObject = attr[INTERACTING_OBJ_ATTR]!!.get(
 
 fun Pawn.getInteractingNpc(): Npc = attr[INTERACTING_NPC_ATTR]!!.get()!!
 
-fun Pawn.getInteractingPlayer() : Player = attr[INTERACTING_PLAYER_ATTR]!!.get()!!
+fun Pawn.getInteractingPlayer(): Player = attr[INTERACTING_PLAYER_ATTR]!!.get()!!
 
 fun Pawn.hasPrayerIcon(icon: PrayerIcon): Boolean = prayerIcon == icon.id
 
 fun Pawn.getBonus(slot: BonusSlot): Int = equipmentBonuses[slot.id]
 
-fun Pawn.hit(damage: Int, type: HitType = if (damage == 0) HitType.BLOCK else HitType.HIT, delay: Int = 0): Hit {
-    val hit = Hit.Builder()
+fun Pawn.hit(
+    damage: Int,
+    type: HitType = if (damage == 0) HitType.BLOCK else HitType.HIT,
+    delay: Int = 0,
+    attackersIndex: Int = -1
+): Hit {
+    val hit =
+        Hit.Builder()
             .setDamageDelay(delay)
-            .addHit(damage = damage, type = type.id)
+            .addHit(damage = damage, type = type.id, attackersIndex)
             .setHitbarMaxPercentage(HitbarType.NORMAL.pixelsWide)
+            .setAttackerIndex(attackersIndex)
             .build()
     addHit(hit)
     return hit
 }
 
-fun Pawn.freeze(cycles: Int, onFreeze: () -> Unit) {
+fun Pawn.freeze(
+    cycles: Int,
+    onFreeze: () -> Unit,
+) {
     if (timers.has(FROZEN_TIMER)) {
         return
     }
@@ -63,7 +74,10 @@ fun Pawn.freeze(cycles: Int) {
     }
 }
 
-fun Pawn.stun(cycles: Int, onStun: () -> Unit): Boolean {
+fun Pawn.stun(
+    cycles: Int,
+    onStun: () -> Unit,
+): Boolean {
     if (timers.has(STUN_TIMER)) {
         return false
     }

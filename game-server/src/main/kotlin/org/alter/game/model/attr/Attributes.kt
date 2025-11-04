@@ -72,7 +72,6 @@ val DISPLAY_MODE_CHANGE_ATTR = AttributeKey<Int>()
  */
 val RESET_FACING_PAWN_DISTANCE_ATTR = AttributeKey<Int>()
 
-
 /**
  * The [Pawn] which another pawn is facing.
  */
@@ -230,4 +229,7 @@ val LEVEL_UP_OLD_XP = AttributeKey<Double>()
 
 val CHANGE_LOGGING = AttributeKey<Boolean>()
 
-var TERMINAL_ARGS = AttributeKey<Array<String>>()
+/**
+ * Instead of running tp
+ */
+val CLIENT_KEY_COMBINATION = AttributeKey<Int>()

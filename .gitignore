@@ -9,15 +9,15 @@ gradlew.bat
 /data/saves/
 /data/rsa/
 /data/xteas.json
+/data/xteas.json.backup
 /cfg/
-/plugins/
 
 error.log
 modulus
 
 first-launch
 first-launch-example
-/game/plugins/src/main/kotlin/gg/rsmod/plugins/content/Testing
 /game.yml
 /dev-settings.yml
-/.Notes/
+dump.hprof
+/.kotlin/

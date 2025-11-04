@@ -1,12 +1,9 @@
 package org.alter.api.cfg
 
-
 object Varp {
-    // Audio
     const val AUDIO_SOUND_EFFECT_VOLUME = 169
     const val AUDIO_AREA_SOUND_VOLUME = 872
     const val AUDIO_MUSIC_VOLUME = 168
-    // Chat
     const val CHAT_PROFANITY_FILTER = 1074
     const val CHAT_SHOW_CHAT_EFFECTS = 171
     const val CHAT_SPLIT_FRIENDS_CHAT = 287
@@ -19,7 +16,7 @@ object Varp {
     const val PLAYER_ATTACK_PRIORITY_VARP = 1107
     const val NPC_ATTACK_PRIORITY_VARP = 1306
     const val WEAPON_ATTACK_STYLE = 43
-
+    const val ACCEPT_AID_VARP = 427
     const val DWARF_CANNON = 0
     const val CANNON_STAGE = 2
     const val CANNON_BALLS_AMOUNT = 3
@@ -568,5 +565,5 @@ object Varp {
     const val INSTANCE_START_POSITION = 14998
     const val BASE_HIDDEN_VARP1 = 14999
     const val PLAYER_HAS_DISPLAY_NAME = 1055
-
+    const val MASTER_SOUND_VOLUME = 3796
 }

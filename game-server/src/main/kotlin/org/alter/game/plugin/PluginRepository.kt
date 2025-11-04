@@ -1,7 +1,15 @@
 package org.alter.game.plugin
 
-import com.google.common.collect.HashMultimap
-import com.google.common.collect.Multimap
+import gg.rsmod.util.ServerProperties
+import io.github.classgraph.ClassGraph
+import io.github.oshai.kotlinlogging.KotlinLogging
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.objects.ObjectArrayList
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet
 import org.alter.game.Server
 import org.alter.game.event.Event
 import org.alter.game.model.World
@@ -13,16 +21,6 @@ import org.alter.game.model.entity.*
 import org.alter.game.model.shop.Shop
 import org.alter.game.model.timer.TimerKey
 import org.alter.game.service.Service
-import gg.rsmod.util.ServerProperties
-import io.github.classgraph.ClassGraph
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.objects.ObjectArrayList
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet
-import mu.KLogging
 import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,8 +32,10 @@ import java.nio.file.Paths
  *
  * @author Tom <rspsmods@gmail.com>
  */
-class PluginRepository(val world: World) {
-
+@Suppress("UNUSED")
+class PluginRepository(
+    val world: World,
+) {
     /**
      * The total amount of plugins.
      */
@@ -55,13 +55,13 @@ class PluginRepository(val world: World) {
      * The plugin that will be executed when the core module wants
      * close the main modal the player has opened.
      *
-     * This is used for things such as the [gg.rsmod.game.message.impl.MoveGameClickMessage].
+     * This is used for things such as the [net.rsprot.protocol.game.incoming.misc.user.MoveGameClick].
      */
     private var closeModalPlugin: (Plugin.() -> Unit)? = null
 
     /**
      * This plugin is used to check if a player has a menu opened and any
-     * [gg.rsmod.game.model.queue.QueueTask] with a [gg.rsmod.game.model.queue.TaskPriority.STANDARD]
+     * [org.alter.game.model.queue.QueueTask] with a [org.alter.game.model.queue.TaskPriority.STANDARD]
      * priority should wait before executing.
      */
     private var isMenuOpenedPlugin: (Plugin.() -> Boolean)? = null
@@ -77,13 +77,13 @@ class PluginRepository(val world: World) {
     private val logoutPlugins = mutableListOf<Plugin.() -> Unit>()
 
     /**
-     * A list of plugins that will be executed upon an [gg.rsmod.game.model.entity.Npc]
+     * A list of plugins that will be executed upon an [org.alter.game.model.entity.Npc]
      * being spawned into the world. Use sparingly.
      */
     private val globalNpcSpawnPlugins = mutableListOf<Plugin.() -> Unit>()
 
     /**
-     * A list of plugins that will be executed upon an [gg.rsmod.game.model.entity.Npc]
+     * A list of plugins that will be executed upon an [org.alter.game.model.entity.Npc]
      * with a specific id being spawned into the world. Use sparingly per npc.
      *
      * Note: any npc added to this map <strong>will</strong> still invoke the
@@ -100,6 +100,11 @@ class PluginRepository(val world: World) {
      * A map of plugins that contain custom combat plugins for specific npcs.
      */
     private val npcCombatPlugins = Int2ObjectOpenHashMap<Plugin.() -> Unit>()
+
+    /**
+     * A map of plugins that contain custoom death plugin for specific npcs.
+     */
+    private val npcFullDeathPlugins = Int2ObjectOpenHashMap<Plugin.() -> Unit>()
 
     /**
      * A map of plugins that will handle spells on npcs depending on the interface
@@ -138,7 +143,7 @@ class PluginRepository(val world: World) {
      * The privilege power left value can be set to null, which means anyone
      * can use the command.
      */
-    private val commandPlugins = hashMapOf<String, Pair<String?, Plugin.() -> Unit>>()
+    val commandPlugins = hashMapOf<String, Pair<String?, Plugin.() -> Unit>>()
 
     private val commandDescription = hashMapOf<String, String>()
 
@@ -157,13 +162,13 @@ class PluginRepository(val world: World) {
      * A map of plugins that contain plugins that should execute when equipping
      * items from a certain equipment slot.
      */
-    private val equipSlotPlugins: Multimap<Int, Plugin.() -> Unit> = HashMultimap.create()
+    private val equipSlotPlugins: MutableMap<Int, MutableList<Plugin.() -> Unit>> = mutableMapOf()
 
     /**
      * A map of plugins that contain plugins that should execute when un-equipping
      * items from a certain equipment slot.
      */
-    private val unequipSlotPlugins: Multimap<Int, Plugin.() -> Unit> = HashMultimap.create()
+    private val unequipSlotPlugins: MutableMap<Int, MutableList<Plugin.() -> Unit>> = mutableMapOf()
 
     /**
      * A map of plugins that can stop an item from being equipped.
@@ -210,15 +215,15 @@ class PluginRepository(val world: World) {
 
     /**
      * A map that contains any plugin that will be executed upon entering a new
-     * [gg.rsmod.game.model.region.Chunk]. The key is the chunk id which can be
-     * calculated via [gg.rsmod.game.model.region.ChunkCoords.hashCode].
+     * [org.alter.game.model.region.Chunk]. The key is the chunk id which can be
+     * calculated via [org.alter.game.model.region.ChunkCoords.hashCode].
      */
     private val enterChunkPlugins = Int2ObjectOpenHashMap<MutableList<Plugin.() -> Unit>>()
 
     /**
      * A map that contains any plugin that will be executed when leaving a
-     * [gg.rsmod.game.model.region.Chunk]. The key is the chunk id which can be
-     * calculated via [gg.rsmod.game.model.region.ChunkCoords.hashCode].
+     * [org.alter.game.model.region.Chunk]. The key is the chunk id which can be
+     * calculated via [org.alter.game.model.region.ChunkCoords.hashCode].
      */
     private val exitChunkPlugins = Int2ObjectOpenHashMap<MutableList<Plugin.() -> Unit>>()
 
@@ -341,18 +346,20 @@ class PluginRepository(val world: World) {
      */
     private val npcDeathPlugins = Int2ObjectOpenHashMap<Plugin.() -> Unit>()
 
+    internal val anyNpcDeath = mutableListOf<Plugin.() -> Unit>()
+
     /**
      * A map of plugins that occur when an [Event] is triggered.
      */
     private val eventPlugins = Object2ObjectOpenHashMap<Class<out Event>, MutableList<Plugin.(Event) -> Unit>>()
 
     /**
-     * The int value is calculated via [gg.rsmod.game.model.region.ChunkCoords.hashCode].
+     * The int value is calculated via [org.alter.game.model.region.ChunkCoords.hashCode].
      */
     internal val multiCombatChunks = IntOpenHashSet()
 
     /**
-     * The int value is calculated via [gg.rsmod.game.model.Tile.regionId].
+     * The int value is calculated via [org.alter.game.model.Tile.regionId].
      */
     internal val multiCombatRegions = IntOpenHashSet()
 
@@ -383,33 +390,34 @@ class PluginRepository(val world: World) {
     /**
      * Holds all valid shops set from plugins for this [PluginRepository].
      */
-    internal val shops = Object2ObjectOpenHashMap<String, Shop>()
+    val shops = Object2ObjectOpenHashMap<String, Shop>()
 
     /**
      * A list of [Service]s that have been requested for loading by a [KotlinPlugin].
      */
     internal val services = mutableListOf<Service>()
 
-    internal val onAnimList = hashMapOf<Int, Plugin.() -> Unit>()
-
-    internal val terminalCommands = hashMapOf<String, Pair<String?, Plugin.() -> Unit>>()
-
-
+    private val onAnimList = hashMapOf<Int, Plugin.() -> Unit>()
 
     /**
      * Holds all container keys set from plugins for this [PluginRepository].
      */
-    val containerKeys = ObjectOpenHashSet<ContainerKey>().apply {
-        add(INVENTORY_KEY)
-        add(EQUIPMENT_KEY)
-        add(BANK_KEY)
-        add(BOND_POUCH_KEY)
-    }
+    val containerKeys =
+        ObjectOpenHashSet<ContainerKey>().apply {
+            add(INVENTORY_KEY)
+            add(EQUIPMENT_KEY)
+            add(BANK_KEY)
+            add(BOND_POUCH_KEY)
+        }
 
     /**
      * Initiates and populates all our plugins.
      */
-    fun init(server: Server, world: World, jarPluginsDirectory: String) {
+    fun init(
+        server: Server,
+        world: World,
+        jarPluginsDirectory: String,
+    ) {
         loadPlugins(server, jarPluginsDirectory)
         loadServices(server, world)
         spawnEntities()
@@ -418,33 +426,49 @@ class PluginRepository(val world: World) {
     /**
      * Locate and load all [KotlinPlugin]s.
      */
-    private fun loadPlugins(server: Server, jarPluginsDirectory: String) {
+    private fun loadPlugins(
+        server: Server,
+        jarPluginsDirectory: String,
+    ) {
         scanPackageForPlugins(server, world)
-        scanJarDirectoryForPlugins(server, world, Paths.get(jarPluginsDirectory))
+        //scanJarDirectoryForPlugins(server, world, Paths.get(jarPluginsDirectory))
     }
 
     /**
      * Scan our local package to find any and all [KotlinPlugin]s.
      */
-    private fun scanPackageForPlugins(server: Server, world: World) {
-        /**
-         * There are two Mains?
-         */
-        ClassGraph().enableAllInfo().whitelistModules().scan().use { result ->
-            val plugins = result.getSubclasses(KotlinPlugin::class.java.name).directOnly()
-            plugins.forEach { p ->
-                val pluginClass = p.loadClass(KotlinPlugin::class.java)
-                val constructor = pluginClass.getConstructor(PluginRepository::class.java, World::class.java, Server::class.java)
-                constructor.newInstance(this, world, server)
-                pluginCount++
+    private fun scanPackageForPlugins(
+        server: Server,
+        world: World,
+    ) {
+        try {
+            ClassGraph().enableAllInfo().scan().use { result ->
+                val plugins = result.getSubclasses(KotlinPlugin::class.java.name).directOnly()
+                plugins.forEach { p ->
+                    try {
+                        val pluginClass = Class.forName(p.name)
+                        val constructor = pluginClass.getConstructor(PluginRepository::class.java, World::class.java, Server::class.java)
+                        constructor.newInstance(this, world, server)
+                        pluginCount++
+                    } catch (e: Exception) {
+                        println("Failed to load: ${p.name} plugin")
+                        e.printStackTrace()
+                    }
+                }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     /**
      * Scan directory for any JAR file which may contain plugins.
      */
-    private fun scanJarDirectoryForPlugins(server: Server, world: World, directory: Path) {
+    private fun scanJarDirectoryForPlugins(
+        server: Server,
+        world: World,
+        directory: Path,
+    ) {
         if (Files.exists(directory)) {
             Files.walk(directory).forEach { path ->
                 if (!path.fileName.toString().endsWith(".jar")) {
@@ -459,25 +483,36 @@ class PluginRepository(val world: World) {
      * Scan JAR located in [path] for any and all valid [KotlinPlugin]s and
      * initialise them.
      */
-    private fun scanJarForPlugins(server: Server, world: World, path: Path) {
-        val urls = arrayOf(path.toFile().toURI().toURL())
-        val classLoader = URLClassLoader(urls, PluginRepository::class.java.classLoader)
+    private fun scanJarForPlugins(
+        server: Server,
+        world: World,
+        path: Path,
+    ) {
+        /**
+         * @TODO
+         * Dublicates plugins
+         */
+      // val urls = arrayOf(path.toFile().toURI().toURL())
+      // val classLoader = URLClassLoader(urls, PluginRepository::class.java.classLoader)
 
-        ClassGraph().ignoreParentClassLoaders().addClassLoader(classLoader).enableAllInfo().scan().use { result ->
-            val plugins = result.getSubclasses(KotlinPlugin::class.java.name).directOnly()
-            plugins.forEach { p ->
-                val pluginClass = p.loadClass(KotlinPlugin::class.java)
-                val constructor = pluginClass.getConstructor(PluginRepository::class.java, World::class.java, Server::class.java)
-                constructor.newInstance(this, world, server)
-                pluginCount++
-            }
-        }
+      // ClassGraph().ignoreParentClassLoaders().addClassLoader(classLoader).enableAllInfo().scan().use { result ->
+      //     val plugins = result.getSubclasses(KotlinPlugin::class.java.name).directOnly()
+      //     plugins.forEach { p ->
+      //         val pluginClass = p.loadClass(KotlinPlugin::class.java)
+      //         val constructor = pluginClass.getConstructor(PluginRepository::class.java, World::class.java, Server::class.java)
+      //         constructor.newInstance(this, world, server)
+      //         pluginCount++
+      //     }
+      // }
     }
 
     /**
      * Load and initialise [Service]s given to us by [KotlinPlugin]s.
      */
-    private fun loadServices(server: Server, world: World) {
+    private fun loadServices(
+        server: Server,
+        world: World,
+    ) {
         services.forEach { service ->
             service.init(server, world, ServerProperties())
             world.services.add(service)
@@ -489,7 +524,7 @@ class PluginRepository(val world: World) {
     }
 
     /**
-     * Spawn any and all [gg.rsmod.game.model.entity.Entity]s given to us by
+     * Spawn any and all [org.alter.game.model.entity.Entity]s given to us by
      * [KotlinPlugin]s.
      */
     private fun spawnEntities() {
@@ -542,7 +577,7 @@ class PluginRepository(val world: World) {
 
     fun bindCombat(plugin: Plugin.() -> Unit) {
         if (combatPlugin != null) {
-            logger.error("Combat plugin is already bound")
+            logger.error { "Combat plugin is already bound" }
             throw IllegalStateException("Combat plugin is already bound")
         }
         combatPlugin = plugin
@@ -554,9 +589,12 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun bindNpcCombat(npc: Int, plugin: Plugin.() -> Unit) {
+    fun bindNpcCombat(
+        npc: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (npcCombatPlugins.containsKey(npc)) {
-            logger.error("Npc is already bound to a combat plugin: $npc")
+            logger.error { "Npc is already bound to a combat plugin: $npc" }
             throw IllegalStateException("Npc is already bound to a combat plugin: $npc")
         }
         npcCombatPlugins[npc] = plugin
@@ -568,6 +606,23 @@ class PluginRepository(val world: World) {
         return true
     }
 
+    fun bindNpcFullDeath(
+        npc: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
+        if (npcFullDeathPlugins.containsKey(npc)) {
+            logger.error { "Npc is already bound to a full death plugin: $npc" }
+            throw IllegalStateException("Npc is already bound to a full death plugin: $npc")
+        }
+        npcFullDeathPlugins[npc] = plugin
+    }
+
+    fun executeNpcFullDeath(npc: Npc): Boolean {
+        val plugin = npcFullDeathPlugins[npc.id] ?: return false
+        npc.executePlugin(plugin)
+        return true
+    }
+
     fun bindPlayerPreDeath(plugin: Plugin.() -> Unit) {
         playerPreDeathPlugins.add(plugin)
     }
@@ -576,11 +631,17 @@ class PluginRepository(val world: World) {
         playerPreDeathPlugins.forEach { plugin -> p.executePlugin(plugin) }
     }
 
-    fun bindPlayerOption(option: String, plugin: Plugin.() -> Unit) {
+    fun bindPlayerOption(
+        option: String,
+        plugin: Plugin.() -> Unit,
+    ) {
         playerOptionPlugins[option] = plugin
     }
 
-    fun executePlayerOption(player: Player, option: String): Boolean {
+    fun executePlayerOption(
+        player: Player,
+        option: String,
+    ): Boolean {
         val logic = playerOptionPlugins[option] ?: return false
         player.executePlugin(logic)
         return true
@@ -594,7 +655,10 @@ class PluginRepository(val world: World) {
         playerDeathPlugins.forEach { plugin -> p.executePlugin(plugin) }
     }
 
-    fun bindNpcPreDeath(npc: Int, plugin: Plugin.() -> Unit) {
+    fun bindNpcPreDeath(
+        npc: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         npcPreDeathPlugins[npc] = plugin
     }
 
@@ -604,8 +668,15 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun bindNpcDeath(npc: Int, plugin: Plugin.() -> Unit) {
+    fun bindNpcDeath(
+        npc: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         npcDeathPlugins[npc] = plugin
+    }
+
+    fun bindAnyNpcDeath(plugin: Plugin.() -> Unit) {
+        anyNpcDeath.add(plugin)
     }
 
     fun executeNpcDeath(npc: Npc) {
@@ -614,33 +685,49 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun bindSpellOnNpc(parent: Int, child: Int, plugin: Plugin.() -> Unit) {
+    fun bindSpellOnNpc(
+        parent: Int,
+        child: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (parent shl 16) or child
         if (spellOnNpcPlugins.containsKey(hash)) {
-            logger.error("Spell is already bound to a plugin: [$parent, $child]")
+            logger.error { "Spell is already bound to a plugin: [$parent, $child]" }
             throw IllegalStateException("Spell is already bound to a plugin: [$parent, $child]")
         }
         spellOnNpcPlugins[hash] = plugin
     }
 
-    fun executeSpellOnNpc(p: Player, parent: Int, child: Int): Boolean {
+    fun executeSpellOnNpc(
+        p: Player,
+        parent: Int,
+        child: Int,
+    ): Boolean {
         val hash = (parent shl 16) or child
         val plugin = spellOnNpcPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun executeSpellOnPlayer(p: Player, parent: Int, child: Int): Boolean {
+    fun executeSpellOnPlayer(
+        p: Player,
+        parent: Int,
+        child: Int,
+    ): Boolean {
         val hash = (parent shl 16) or child
         val plugin = spellOnPlayerPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun bindSpellOnPlayer(parent: Int, child: Int, plugin: Plugin.() -> Unit) {
+    fun bindSpellOnPlayer(
+        parent: Int,
+        child: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (parent shl 16) or child
         if (spellOnPlayerPlugins.containsKey(hash)) {
-            logger.error("Spell is already bound to a plugin: [$parent, $child]")
+            logger.error { "Spell is already bound to a plugin: [$parent, $child]" }
             throw IllegalStateException("Spell is already bound to a plugin: [$parent, $child]")
         }
         spellOnPlayerPlugins[hash] = plugin
@@ -648,7 +735,7 @@ class PluginRepository(val world: World) {
 
     fun bindWindowStatus(plugin: Plugin.() -> Unit) {
         if (windowStatusPlugin != null) {
-            logger.error("Window status is already bound to a plugin")
+            logger.error { "Window status is already bound to a plugin" }
             throw IllegalStateException("Window status is already bound to a plugin")
         }
         windowStatusPlugin = plugin
@@ -664,7 +751,7 @@ class PluginRepository(val world: World) {
 
     fun bindModalClose(plugin: Plugin.() -> Unit) {
         if (closeModalPlugin != null) {
-            logger.error("Modal close is already bound to a plugin")
+            logger.error { "Modal close is already bound to a plugin" }
             throw IllegalStateException("Modal close is already bound to a plugin")
         }
         closeModalPlugin = plugin
@@ -680,15 +767,18 @@ class PluginRepository(val world: World) {
 
     fun setMenuOpenedCheck(plugin: Plugin.() -> Boolean) {
         if (isMenuOpenedPlugin != null) {
-            logger.error("\"Menu Opened\" is already bound to a plugin")
-            throw IllegalStateException("\"Menu Opened\" is already bound to a plugin")
+            logger.error { "Menu Opened is already bound to a plugin" }
+            throw IllegalStateException("Menu Opened is already bound to a plugin")
         }
         isMenuOpenedPlugin = plugin
     }
 
     fun isMenuOpened(p: Player): Boolean = if (isMenuOpenedPlugin != null) p.executePlugin(isMenuOpenedPlugin!!) else false
 
-    fun <T : Event> bindEvent(event: Class<T>, plugin: Plugin.(Event) -> Unit) {
+    fun <T : Event> bindEvent(
+        event: Class<T>,
+        plugin: Plugin.(Event) -> Unit,
+    ) {
         val plugins = eventPlugins[event]
         if (plugins != null) {
             plugins.add(plugin)
@@ -699,7 +789,10 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun <T : Event> executeEvent(p: Pawn, event: T) {
+    fun <T : Event> executeEvent(
+        p: Pawn,
+        event: T,
+    ) {
         eventPlugins[event::class.java]?.forEach { plugin ->
             p.executePlugin {
                 plugin.invoke(this, event)
@@ -723,26 +816,46 @@ class PluginRepository(val world: World) {
         logoutPlugins.forEach { logic -> p.executePlugin(logic) }
     }
 
-    fun bindComponentItemSwap(interfaceId: Int, component: Int, plugin: Plugin.() -> Unit) {
+    fun bindComponentItemSwap(
+        interfaceId: Int,
+        component: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (interfaceId shl 16) or component
         componentItemSwapPlugins[hash] = plugin
     }
 
-    fun executeComponentItemSwap(p: Player, interfaceId: Int, component: Int): Boolean {
+    fun executeComponentItemSwap(
+        p: Player,
+        interfaceId: Int,
+        component: Int,
+    ): Boolean {
         val hash = (interfaceId shl 16) or component
         val plugin = componentItemSwapPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun bindComponentToComponentItemSwap(srcInterfaceId: Int, srcComponent: Int, dstInterfaceId: Int, dstComponent: Int, plugin: Plugin.() -> Unit) {
+    fun bindComponentToComponentItemSwap(
+        srcInterfaceId: Int,
+        srcComponent: Int,
+        dstInterfaceId: Int,
+        dstComponent: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val srcHash = (srcInterfaceId shl 16) or srcComponent
         val dstHash = (dstInterfaceId shl 16) or dstComponent
         val combinedHash = ((srcHash shl 32) or dstHash).toLong()
         componentToComponentItemSwapPlugins[combinedHash] = plugin
     }
 
-    fun executeComponentToComponentItemSwap(p: Player, srcInterfaceId: Int, srcComponent: Int, dstInterfaceId: Int, dstComponent: Int): Boolean {
+    fun executeComponentToComponentItemSwap(
+        p: Player,
+        srcInterfaceId: Int,
+        srcComponent: Int,
+        dstInterfaceId: Int,
+        dstComponent: Int,
+    ): Boolean {
         val srcHash = (srcInterfaceId shl 16) or srcComponent
         val dstHash = (dstInterfaceId shl 16) or dstComponent
         val combinedHash = ((srcHash shl 32) or dstHash).toLong()
@@ -755,7 +868,10 @@ class PluginRepository(val world: World) {
         globalNpcSpawnPlugins.add(plugin)
     }
 
-    fun bindNpcSpawn(npc: Int, plugin: Plugin.() -> Unit) {
+    fun bindNpcSpawn(
+        npc: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = npcSpawnPlugins[npc]
         if (plugins != null) {
             plugins.add(plugin)
@@ -772,15 +888,21 @@ class PluginRepository(val world: World) {
         globalNpcSpawnPlugins.forEach { logic -> n.executePlugin(logic) }
     }
 
-    fun bindTimer(key: TimerKey, plugin: Plugin.() -> Unit) {
+    fun bindTimer(
+        key: TimerKey,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (timerPlugins.containsKey(key)) {
-            logger.error("Timer key is already bound to a plugin: $key")
+            logger.error { "Timer key is already bound to a plugin: $key" }
             throw IllegalStateException("Timer key is already bound to a plugin: $key")
         }
         timerPlugins[key] = plugin
     }
 
-    fun executeTimer(pawn: Pawn, key: TimerKey): Boolean {
+    fun executeTimer(
+        pawn: Pawn,
+        key: TimerKey,
+    ): Boolean {
         val plugin = timerPlugins[key]
         if (plugin != null) {
             pawn.executePlugin(plugin)
@@ -789,7 +911,10 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun executeWorldTimer(world: World, key: TimerKey): Boolean {
+    fun executeWorldTimer(
+        world: World,
+        key: TimerKey,
+    ): Boolean {
         val plugin = timerPlugins[key]
         if (plugin != null) {
             world.executePlugin(world, plugin)
@@ -798,15 +923,21 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindInterfaceOpen(interfaceId: Int, plugin: Plugin.() -> Unit) {
+    fun bindInterfaceOpen(
+        interfaceId: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (interfaceOpenPlugins.containsKey(interfaceId)) {
-            logger.error("Component id is already bound to a plugin: $interfaceId")
+            logger.error { "Component id is already bound to a plugin: $interfaceId" }
             throw IllegalStateException("Component id is already bound to a plugin: $interfaceId")
         }
         interfaceOpenPlugins[interfaceId] = plugin
     }
 
-    fun executeInterfaceOpen(p: Player, interfaceId: Int): Boolean {
+    fun executeInterfaceOpen(
+        p: Player,
+        interfaceId: Int,
+    ): Boolean {
         val plugin = interfaceOpenPlugins[interfaceId]
         if (plugin != null) {
             p.executePlugin(plugin)
@@ -815,15 +946,21 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindInterfaceClose(interfaceId: Int, plugin: Plugin.() -> Unit) {
+    fun bindInterfaceClose(
+        interfaceId: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (interfaceClosePlugins.containsKey(interfaceId)) {
-            logger.error("Component id is already bound to a plugin: $interfaceId")
+            logger.error { "Component id is already bound to a plugin: $interfaceId" }
             throw IllegalStateException("Component id is already bound to a plugin: $interfaceId")
         }
         interfaceClosePlugins[interfaceId] = plugin
     }
 
-    fun executeInterfaceClose(p: Player, interfaceId: Int): Boolean {
+    fun executeInterfaceClose(
+        p: Player,
+        interfaceId: Int,
+    ): Boolean {
         val plugin = interfaceClosePlugins[interfaceId]
         if (plugin != null) {
             p.executePlugin(plugin)
@@ -832,29 +969,42 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindCommand(command: String, powerRequired: String? = null, description: String? = null, plugin: Plugin.() -> Unit) {
+    fun bindCommand(
+        command: String,
+        powerRequired: String? = null,
+        description: String? = null,
+        plugin: Plugin.() -> Unit,
+    ) {
         val cmd = command.lowercase()
         val desc = description.toString().lowercase()
         if (commandPlugins.containsKey(cmd)) {
-            logger.error("Command is already bound to a plugin: $cmd")
+            logger.error { "Command is already bound to a plugin: $cmd" }
             throw IllegalStateException("Command is already bound to a plugin: $cmd")
         }
         commandPlugins[cmd] = Pair(powerRequired, plugin)
         commandDescription[cmd] = desc
     }
 
-    fun bindCommands(plugin: Plugin.() -> Unit, powerRequired: String? = null, vararg commands: String) {
+    fun bindCommands(
+        plugin: Plugin.() -> Unit,
+        powerRequired: String? = null,
+        vararg commands: String,
+    ) {
         for (command in commands) {
             val cmd = command.lowercase()
             if (commandPlugins.containsKey(cmd)) {
-                logger.error("Command is already bound to a plugin: $cmd")
+                logger.error { "Command is already bound to a plugin: $cmd" }
                 throw IllegalStateException("Command is already bound to a plugin: $cmd")
             }
             commandPlugins[cmd] = Pair(powerRequired, plugin)
         }
     }
 
-    fun executeCommand(p: Player, command: String, args: Array<String>? = null): Boolean {
+    fun executeCommand(
+        p: Player,
+        command: String,
+        args: Array<String>? = null,
+    ): Boolean {
         val commandPair = commandPlugins[command]
         if (commandPair != null) {
             val powerRequired = commandPair.first
@@ -876,16 +1026,24 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindButton(parent: Int, child: Int, plugin: Plugin.() -> Unit) {
+    fun bindButton(
+        parent: Int,
+        child: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (parent shl 16) or child
         if (buttonPlugins.containsKey(hash)) {
-            logger.error("Button hash already bound to a plugin: [parent=$parent, child=$child]")
+            logger.error { "Button hash already bound to a plugin: [parent=$parent, child=$child]" }
             throw IllegalStateException("Button hash already bound to a plugin: [parent=$parent, child=$child]")
         }
         buttonPlugins[hash] = plugin
     }
 
-    fun executeButton(p: Player, parent: Int, child: Int): Boolean {
+    fun executeButton(
+        p: Player,
+        parent: Int,
+        child: Int,
+    ): Boolean {
         val hash = (parent shl 16) or child
         val plugin = buttonPlugins[hash]
         if (plugin != null) {
@@ -895,7 +1053,11 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindEquipmentOption(item: Int, option: Int, plugin: Plugin.() -> Unit) {
+    fun bindEquipmentOption(
+        item: Int,
+        option: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (item shl 16) or option
         if (equipmentOptionPlugins.containsKey(hash)) {
             logger.error(RuntimeException("Button hash already bound to a plugin: [item=$item, opt=$option]")) {}
@@ -904,18 +1066,28 @@ class PluginRepository(val world: World) {
         equipmentOptionPlugins[hash] = plugin
     }
 
-    fun executeEquipmentOption(p: Player, item: Int, option: Int): Boolean {
+    fun executeEquipmentOption(
+        p: Player,
+        item: Int,
+        option: Int,
+    ): Boolean {
         val hash = (item shl 16) or option
         val plugin = equipmentOptionPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun bindEquipSlot(equipSlot: Int, plugin: Plugin.() -> Unit) {
-        equipSlotPlugins.put(equipSlot, plugin)
+    fun bindEquipSlot(
+        equipSlot: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
+        equipSlotPlugins.getOrPut(equipSlot) { mutableListOf() }.add(plugin)
     }
 
-    fun executeEquipSlot(p: Player, equipSlot: Int): Boolean {
+    fun executeEquipSlot(
+        p: Player,
+        equipSlot: Int,
+    ): Boolean {
         val plugin = equipSlotPlugins[equipSlot]
         if (plugin != null) {
             plugin.forEach { logic -> p.executePlugin(logic) }
@@ -924,11 +1096,17 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindUnequipSlot(equipSlot: Int, plugin: Plugin.() -> Unit) {
-        unequipSlotPlugins.put(equipSlot, plugin)
+    fun bindUnequipSlot(
+        equipSlot: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
+        unequipSlotPlugins.getOrPut(equipSlot) { mutableListOf() }.add(plugin)
     }
 
-    fun executeUnequipSlot(p: Player, equipSlot: Int): Boolean {
+    fun executeUnequipSlot(
+        p: Player,
+        equipSlot: Int,
+    ): Boolean {
         val plugin = unequipSlotPlugins[equipSlot]
         if (plugin != null) {
             plugin.forEach { logic -> p.executePlugin(logic) }
@@ -937,15 +1115,21 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindEquipItemRequirement(item: Int, plugin: Plugin.() -> Boolean) {
+    fun bindEquipItemRequirement(
+        item: Int,
+        plugin: Plugin.() -> Boolean,
+    ) {
         if (equipItemRequirementPlugins.containsKey(item)) {
-            logger.error("Equip item requirement already bound to a plugin: [item=$item]")
+            logger.error { "Equip item requirement already bound to a plugin: [item=$item]" }
             throw IllegalStateException("Equip item requirement already bound to a plugin: [item=$item]")
         }
         equipItemRequirementPlugins[item] = plugin
     }
 
-    fun executeEquipItemRequirement(p: Player, item: Int): Boolean {
+    fun executeEquipItemRequirement(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = equipItemRequirementPlugins[item]
         if (plugin != null) {
             /*
@@ -960,23 +1144,32 @@ class PluginRepository(val world: World) {
         return true
     }
 
-
-    fun bindEquipItem(item: Int, plugin: Plugin.() -> Unit) {
+    fun bindEquipItem(
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (equipItemPlugins.containsKey(item)) {
-            logger.error("Equip item already bound to a plugin: [item=$item]")
+            logger.error { "Equip item already bound to a plugin: [item=$item]" }
             throw IllegalStateException("Equip item already bound to a plugin: [item=$item]")
         }
         equipItemPlugins[item] = plugin
     }
-    fun bindBeforeEquipItem(item: Int, plugin: Plugin.() -> Unit) {
+
+    fun bindBeforeEquipItem(
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (equipItemPlugins.containsKey(item)) {
-            logger.error("Before Equip item already bound to a plugin: [item=$item]")
+            logger.error { "Before Equip item already bound to a plugin: [item=$item]" }
             throw IllegalStateException("Before Equip item already bound to a plugin: [item=$item]")
         }
         equipItemPlugins[item] = plugin
     }
 
-    fun executeEquipItem(p: Player, item: Int): Boolean {
+    fun executeEquipItem(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = equipItemPlugins[item]
         if (plugin != null) {
             p.executePlugin(plugin)
@@ -985,23 +1178,32 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun bindUnequipItem(item: Int, plugin: Plugin.() -> Unit) {
+    fun bindUnequipItem(
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (unequipItemPlugins.containsKey(item)) {
-            logger.error("Unequip item already bound to a plugin: [item=$item]")
+            logger.error { "Unequip item already bound to a plugin: [item=$item]" }
             throw IllegalStateException("Unequip item already bound to a plugin: [item=$item]")
         }
         unequipItemPlugins[item] = plugin
     }
 
-    fun setItemCombatLogic(item: Int, plugin: Plugin.() -> Unit) {
+    fun setItemCombatLogic(
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (itemCombatLogic.containsKey(item)) {
-            logger.error("Weapon logic already bound to a plugin: [item=$item]")
+            logger.error { "Weapon logic already bound to a plugin: [item=$item]" }
             throw IllegalStateException("Weapon logic already bound to a plugin: [item=$item]")
         }
         itemCombatLogic[item] = plugin
     }
 
-    fun executeItemCombatLogic(p: Player, item: Int): Boolean {
+    fun executeItemCombatLogic(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = itemCombatLogic[item]
         if (plugin != null) {
             p.executePlugin(plugin)
@@ -1019,7 +1221,10 @@ class PluginRepository(val world: World) {
         return false
     }
 
-    fun executeUnequipItem(p: Player, item: Int): Boolean {
+    fun executeUnequipItem(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = unequipItemPlugins[item]
         if (plugin != null) {
             p.executePlugin(plugin)
@@ -1037,7 +1242,10 @@ class PluginRepository(val world: World) {
         skillLevelUps?.let { p.executePlugin(it) }
     }
 
-    fun bindRegionEnter(regionId: Int, plugin: Plugin.() -> Unit) {
+    fun bindRegionEnter(
+        regionId: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = enterRegionPlugins[regionId]
         if (plugins != null) {
             plugins.add(plugin)
@@ -1046,11 +1254,17 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun executeRegionEnter(p: Player, regionId: Int) {
+    fun executeRegionEnter(
+        p: Player,
+        regionId: Int,
+    ) {
         enterRegionPlugins[regionId]?.forEach { logic -> p.executePlugin(logic) }
     }
 
-    fun bindRegionExit(regionId: Int, plugin: Plugin.() -> Unit) {
+    fun bindRegionExit(
+        regionId: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = exitRegionPlugins[regionId]
         if (plugins != null) {
             plugins.add(plugin)
@@ -1059,11 +1273,17 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun executeRegionExit(p: Player, regionId: Int) {
+    fun executeRegionExit(
+        p: Player,
+        regionId: Int,
+    ) {
         exitRegionPlugins[regionId]?.forEach { logic -> p.executePlugin(logic) }
     }
 
-    fun bindChunkEnter(chunkHash: Int, plugin: Plugin.() -> Unit) {
+    fun bindChunkEnter(
+        chunkHash: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = enterChunkPlugins[chunkHash]
         if (plugins != null) {
             plugins.add(plugin)
@@ -1072,11 +1292,17 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun executeChunkEnter(p: Player, chunkHash: Int) {
+    fun executeChunkEnter(
+        p: Player,
+        chunkHash: Int,
+    ) {
         enterChunkPlugins[chunkHash]?.forEach { logic -> p.executePlugin(logic) }
     }
 
-    fun bindChunkExit(chunkHash: Int, plugin: Plugin.() -> Unit) {
+    fun bindChunkExit(
+        chunkHash: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = exitChunkPlugins[chunkHash]
         if (plugins != null) {
             plugins.add(plugin)
@@ -1085,67 +1311,98 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun executeChunkExit(p: Player, chunkHash: Int) {
+    fun executeChunkExit(
+        p: Player,
+        chunkHash: Int,
+    ) {
         exitChunkPlugins[chunkHash]?.forEach { logic -> p.executePlugin(logic) }
     }
 
-    fun bindItem(id: Int, opt: Int, plugin: Plugin.() -> Unit) {
+    fun bindItem(
+        id: Int,
+        opt: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val optMap = itemPlugins[id] ?: Int2ObjectOpenHashMap(1)
         if (optMap.containsKey(opt)) {
-            logger.error("Item is already bound to a plugin: $id [opt=$opt]")
+            logger.error { "Item is already bound to a plugin: $id [opt=$opt]" }
             throw IllegalStateException("Item is already bound to a plugin: $id [opt=$opt]")
         }
         optMap[opt] = plugin
         itemPlugins[id] = optMap
     }
 
-    fun executeItem(p: Player, id: Int, opt: Int): Boolean {
+    fun executeItem(
+        p: Player,
+        id: Int,
+        opt: Int,
+    ): Boolean {
         val optMap = itemPlugins[id] ?: return false
         val logic = optMap[opt] ?: return false
         p.executePlugin(logic)
         return true
     }
 
-    fun bindGroundItem(id: Int, opt: Int, plugin: Plugin.() -> Unit) {
+    fun bindGroundItem(
+        id: Int,
+        opt: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val optMap = groundItemPlugins[id] ?: Int2ObjectOpenHashMap(1)
         if (optMap.containsKey(opt)) {
-            logger.error("Ground item is already bound to a plugin: $id [opt=$opt]")
+            logger.error { "Ground item is already bound to a plugin: $id [opt=$opt]" }
             throw IllegalStateException("Ground item is already bound to a plugin: $id [opt=$opt]")
         }
         optMap[opt] = plugin
         groundItemPlugins[id] = optMap
     }
 
-    fun executeGroundItem(p: Player, id: Int, opt: Int): Boolean {
+    fun executeGroundItem(
+        p: Player,
+        id: Int,
+        opt: Int,
+    ): Boolean {
         val optMap = groundItemPlugins[id] ?: return false
         val logic = optMap[opt] ?: return false
         p.executePlugin(logic)
         return true
     }
 
-    fun setGroundItemPickupCondition(item: Int, plugin: Plugin.() -> Boolean) {
+    fun setGroundItemPickupCondition(
+        item: Int,
+        plugin: Plugin.() -> Boolean,
+    ) {
         if (groundItemPickupConditions.containsKey(item)) {
             val error = IllegalStateException("Ground item pick-up condition already set: $item")
-            logger.error(error) {}
+            logger.error { error }
             throw error
         }
         groundItemPickupConditions[item] = plugin
     }
 
-    fun canPickupGroundItem(p: Player, item: Int): Boolean {
+    fun canPickupGroundItem(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = groundItemPickupConditions[item] ?: return true
         return p.executePlugin(plugin)
     }
 
-    fun bindCanItemDrop(item: Int, plugin: Plugin.() -> Boolean) {
+    fun bindCanItemDrop(
+        item: Int,
+        plugin: Plugin.() -> Boolean,
+    ) {
         if (canDropItemPlugins.containsKey(item)) {
-            logger.error("Item already bound to a 'can-drop' plugin: $item")
+            logger.error { "Item already bound to a 'can-drop' plugin: $item" }
             throw IllegalStateException("Item already bound to a 'can-drop' plugin: $item")
         }
         canDropItemPlugins[item] = plugin
     }
 
-    fun canDropItem(p: Player, item: Int): Boolean {
+    fun canDropItem(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = canDropItemPlugins[item]
         if (plugin != null) {
             return p.executePlugin(plugin)
@@ -1153,11 +1410,16 @@ class PluginRepository(val world: World) {
         return true
     }
 
-    fun bindItemOnObject(obj: Int, item: Int, lineOfSightDistance: Int = -1, plugin: Plugin.() -> Unit) {
+    fun bindItemOnObject(
+        obj: Int,
+        item: Int,
+        lineOfSightDistance: Int = -1,
+        plugin: Plugin.() -> Unit,
+    ) {
         val plugins = itemOnObjectPlugins[item] ?: Int2ObjectOpenHashMap(1)
         if (plugins.containsKey(obj)) {
             val error = "Item is already bound to an object plugin: $item [obj=$obj]"
-            logger.error(error)
+            logger.error { error }
             throw IllegalStateException(error)
         }
 
@@ -1169,14 +1431,22 @@ class PluginRepository(val world: World) {
         itemOnObjectPlugins[item] = plugins
     }
 
-    fun executeItemOnObject(p: Player, obj: Int, item: Int): Boolean {
+    fun executeItemOnObject(
+        p: Player,
+        obj: Int,
+        item: Int,
+    ): Boolean {
         val plugins = itemOnObjectPlugins[item] ?: return false
         val logic = plugins[obj] ?: return false
         p.executePlugin(logic)
         return true
     }
 
-    fun bindItemOnItem(item1: Int, item2: Int, plugin: Plugin.() -> Unit) {
+    fun bindItemOnItem(
+        item1: Int,
+        item2: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val max = Math.max(item1, item2)
         val min = Math.min(item1, item2)
 
@@ -1190,7 +1460,11 @@ class PluginRepository(val world: World) {
         itemOnItemPlugins[hash] = plugin
     }
 
-    fun executeItemOnItem(p: Player, item1: Int, item2: Int): Boolean {
+    fun executeItemOnItem(
+        p: Player,
+        item1: Int,
+        item2: Int,
+    ): Boolean {
         val max = Math.max(item1, item2)
         val min = Math.min(item1, item2)
 
@@ -1200,45 +1474,70 @@ class PluginRepository(val world: World) {
         return true
     }
 
-    fun bindItemOnGroundItem(invItem: Int, groundItem: Int, plugin: Plugin.() -> Unit) {
+    fun bindItemOnGroundItem(
+        invItem: Int,
+        groundItem: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (invItem shl 16) or groundItem
         if (itemOnGroundItemPlugins.containsKey(hash)) {
-            val error = IllegalStateException("Item on Item pair is already bound to a plugin: [inv_item=$invItem, ground_item=$groundItem]")
-            logger.error(error) {}
+            val error =
+                IllegalStateException("Item on Item pair is already bound to a plugin: [inv_item=$invItem, ground_item=$groundItem]")
+            logger.error { error }
             throw error
         }
         itemOnGroundItemPlugins[hash] = plugin
     }
 
-    fun executeItemOnGroundItem(p: Player, invItem: Int, groundItem: Int): Boolean {
+    fun executeItemOnGroundItem(
+        p: Player,
+        invItem: Int,
+        groundItem: Int,
+    ): Boolean {
         val hash = (invItem shl 16) or groundItem
         val plugin = itemOnGroundItemPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun bindSpellOnItem(fromComponentHash: Int, toComponentHash: Int, plugin: Plugin.() -> Unit) {
+    fun bindSpellOnItem(
+        fromComponentHash: Int,
+        toComponentHash: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash: Long = (fromComponentHash.toLong() shl 32) or toComponentHash.toLong()
         if (spellOnItemPlugins.containsKey(hash)) {
-            val exception = RuntimeException("Spell on item already bound to a plugin: from=[${fromComponentHash shr 16}, ${fromComponentHash or 0xFFFF}], to=[${toComponentHash shr 16}, ${toComponentHash or 0xFFFF}]")
-            logger.error(exception) {}
+            val exception =
+                RuntimeException(
+                    "Spell on item already bound to a plugin: from=[${fromComponentHash shr 16}, ${fromComponentHash or 0xFFFF}], to=[${toComponentHash shr 16}, ${toComponentHash or 0xFFFF}]",
+                )
+            logger.error { exception }
             throw exception
         }
         spellOnItemPlugins[hash] = plugin
     }
 
-    fun executeSpellOnItem(p: Player, fromComponentHash: Int, toComponentHash: Int): Boolean {
+    fun executeSpellOnItem(
+        p: Player,
+        fromComponentHash: Int,
+        toComponentHash: Int,
+    ): Boolean {
         val hash: Long = (fromComponentHash.toLong() shl 32) or toComponentHash.toLong()
         val plugin = spellOnItemPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun bindObject(obj: Int, opt: Int, lineOfSightDistance: Int = -1, plugin: Plugin.() -> Unit) {
+    fun bindObject(
+        obj: Int,
+        opt: Int,
+        lineOfSightDistance: Int = -1,
+        plugin: Plugin.() -> Unit,
+    ) {
         val optMap = objectPlugins[obj] ?: Int2ObjectOpenHashMap(1)
         if (optMap.containsKey(opt)) {
-            logger.error("Object is already bound to a plugin: $obj [opt=$opt]")
-            throw IllegalStateException("Object is already bound to a plugin: $obj [opt=$opt]")
+            logger.error { "Object is already bound to a plugin: $obj [opt=$opt]" }
+            throw IllegalStateException("Objects [opt=$opt : id = $obj] is already bound to a plugin")
         }
 
         if (lineOfSightDistance != -1) {
@@ -1249,17 +1548,26 @@ class PluginRepository(val world: World) {
         objectPlugins[obj] = optMap
     }
 
-    fun executeObject(p: Player, id: Int, opt: Int): Boolean {
+    fun executeObject(
+        p: Player,
+        id: Int,
+        opt: Int,
+    ): Boolean {
         val optMap = objectPlugins[id] ?: return false
         val logic = optMap[opt] ?: return false
         p.executePlugin(logic)
         return true
     }
 
-    fun bindNpc(npc: Int, opt: Int, lineOfSightDistance: Int = -1, plugin: Plugin.() -> Unit) {
+    fun bindNpc(
+        npc: Int,
+        opt: Int,
+        lineOfSightDistance: Int = -1,
+        plugin: Plugin.() -> Unit,
+    ) {
         val optMap = npcPlugins[npc] ?: Int2ObjectOpenHashMap(1)
         if (optMap.containsKey(opt)) {
-            logger.error("Npc is already bound to a plugin: $npc [opt=$opt]")
+            logger.error { "Npc is already bound to a plugin: $npc [opt=$opt]" }
             throw IllegalStateException("Npc is already bound to a plugin: $npc [opt=$opt]")
         }
 
@@ -1271,45 +1579,63 @@ class PluginRepository(val world: World) {
         npcPlugins[npc] = optMap
     }
 
-    fun executeNpc(p: Player, id: Int, opt: Int): Boolean {
+    fun executeNpc(
+        p: Player,
+        id: Int,
+        opt: Int,
+    ): Boolean {
         val optMap = npcPlugins[id] ?: return false
         val logic = optMap[opt] ?: return false
         p.executePlugin(logic)
         return true
     }
 
-    fun bindItemOnNpc(npc: Int, item: Int, plugin: Plugin.() -> Unit) {
+    fun bindItemOnNpc(
+        npc: Int,
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         val hash = (item shl 16) or npc
         if (itemOnNpcPlugins.containsKey(hash)) {
             val error = IllegalStateException("Item on npc is already bound to a plugin: npc=$npc, item=$item")
-            logger.error(error) {}
+            logger.error { error }
             throw error
         }
         itemOnNpcPlugins[hash] = plugin
     }
 
-    fun executeItemOnNpc(p: Player, npc: Int, item: Int): Boolean {
+    fun executeItemOnNpc(
+        p: Player,
+        npc: Int,
+        item: Int,
+    ): Boolean {
         val hash = (item shl 16) or npc
         val plugin = itemOnNpcPlugins[hash] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    private final val ItemOnNpcGlobal = Int2ObjectOpenHashMap<Plugin.() -> Unit>()
+    private val ItemOnNpcGlobal = Int2ObjectOpenHashMap<Plugin.() -> Unit>()
 
     /**
      *  Will execute if the item was used on any Npc
      */
-    fun bindItemOnNpcGlobal(item: Int, plugin: Plugin.() -> Unit) {
+    fun bindItemOnNpcGlobal(
+        item: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (ItemOnNpcGlobal.containsKey(item)) {
             val error = IllegalStateException("Item on npc global is already bound to a plugin: item=$item")
-            logger.error(error) {}
+            logger.error { error }
             throw error
         }
         ItemOnNpcGlobal[item] = plugin
     }
 
-    fun executeItemOnNpc(p: Player, item: Int): Boolean {
+    fun executeItemOnNpc(
+        p: Player,
+        item: Int,
+    ): Boolean {
         val plugin = ItemOnNpcGlobal[item] ?: return false
         p.executePlugin(plugin)
         return true
@@ -1325,57 +1651,33 @@ class PluginRepository(val world: World) {
         }
     }
 
-    fun bindOnAnimation(anim: Int, plugin: Plugin.() -> Unit) {
+    fun bindOnAnimation(
+        anim: Int,
+        plugin: Plugin.() -> Unit,
+    ) {
         if (onAnimList.containsKey(anim)) {
             throw java.lang.IllegalStateException("$anim is already bound to a plugin.")
         }
         onAnimList[anim] = plugin
     }
 
-    fun executeOnAnimation(p: Player, anim: Int): Boolean {
+    fun executeOnAnimation(
+        p: Player,
+        anim: Int,
+    ): Boolean {
         val plugin = onAnimList[anim] ?: return false
         p.executePlugin(plugin)
         return true
     }
 
-    fun get_all_commands(): ArrayList<String> {
-        val str_list = ArrayList<String>()
-        commandPlugins.forEach { (t, _) ->
-            var value = "::$t"
-            if (getDescription(t) != "") {
-                value += " = [ ${getDescription(t)} ]"
-            }
-            str_list.add(value)
-        }
-        return str_list
-    }
-
-   fun getDescription(command: String): String? {
-       if (commandDescription.get(command) != "null") {
+    fun getDescription(command: String): String? {
+        if (commandDescription.get(command) != "null") {
             return commandDescription.get(command)
-       }
-       return ""
-   }
-
-    fun bindTerminalCommand(command: String, description: String? = null, plugin: Plugin.() -> Unit) {
-        if (terminalCommands.containsKey(command)) {
-            throw IllegalStateException("Terminal Command $command is already bound to a plugin.")
         }
-        terminalCommands[command] = Pair(description, plugin)
+        return ""
     }
 
-    fun executeTerminalCommand(command: String, args: Array<String>? = null): Boolean {
-        val commandPair = terminalCommands[command] ?: return false
-        val plugin = commandPair.second
-        if (args != null) {
-            world.attr.put(COMMAND_ARGS_ATTR, args)
-        } else {
-            world.attr.put(COMMAND_ARGS_ATTR, emptyArray())
-        }
-
-        world.executePlugin(world, plugin)
-        return true
+    companion object {
+        private val logger = KotlinLogging.logger {}
     }
-
-    companion object : KLogging()
 }

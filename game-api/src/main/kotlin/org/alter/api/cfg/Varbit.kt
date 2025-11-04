@@ -1,6 +1,5 @@
 package org.alter.api.cfg
 
-
 object Varbit {
     const val ALL_SETTINGS_TAB = 9656
     const val ACTIVITIES_HITSPLAT_TINTING = 10236
@@ -89,7 +88,7 @@ object Varbit {
     const val EXPLORE_VARBIT = 10115
     const val FLEX_EMOTE_VARBIT = 12062
     const val RELIC_UNLOCKED_EMOTE_VARBIT = 11757
-    const val FRIEND_FACE_ID_VARBIT = 6516 //varbit for smiley or sad face.
+    const val FRIEND_FACE_ID_VARBIT = 6516 // varbit for smiley or sad face.
     const val MUSIC_SLIDER_POSITION_LOCK = 12426
     const val AUDIO_SOUND_SLIDER_POSITION_LOCK = 12427
     const val AREA_SOUND_SLIDER_POSITION_LOCK = 12428
@@ -858,6 +857,7 @@ object Varbit {
     const val COMBAT_ACHIEVEMENT_TASKS_COMPLETION_POPUP = 12455
     const val COMBAT_ACHIEVEMENT_TASKS_REPEAT_COMPLETION = 12456
     const val COMBAT_ACHIEVEMENT_TASKS_REPEAT_FAILURE = 12457
+    const val DISPLAY_TIME_PLAYED = 12933
     const val HIGHLIGHT_HOVERED_TILE = 12977
     const val HIGHLIGHT_CURRENT_TILE = 12978
     const val HIGHLIGHT_DESTINATION_TILE = 12979
@@ -1077,4 +1077,24 @@ object Varbit {
     const val PRESET_RUNE_POUCH_8_RUNE_2_AMOUNT = 65366
     const val PRESET_RUNE_POUCH_8_RUNE_1_AMOUNT = 65367
     const val PRESET_RUNE_POUCH_8_RUNE_4_INDEX = 65368
+
+    // SpellBook filter tab @TODO
+    const val SHOW_COMBAT_SPELLS_STATE = 6605
+    const val SHOW_TELEPORT_SPELLS_STATE = 6609
+    const val SHOW_UTILITY_SPELLS = 6606
+    const val SHOW_SPELLS_LACK_MAGIC_LEVEL = 6607
+    const val SHOW_SPELLS_LACK_RUNES = 6608
+    const val SHOW_SPELLS_LACK_REQUIREMENTS = 12137
+    const val ICON_RESIZING = 6548
+
+    // Prayer filter tab
+    const val LOWER_TIERS_OF_TIERED_PRAYERS = 6574
+    const val SHOW_TIERED_PRAYERS_EVEN_IF_MULTI = 6575 // LOWER_TIERS_OF_TIERED_PRAYERS Has to be (1) Disabled other wise ull get output: "This option can only be toggled when the "Show lower tiers of tiered prayers" is off."
+    const val SHOW_RAPID_HEALING_PRAYERS = 6576
+    const val SHOW_PRAYERS_YOU_LACK_THE_LEVEL = 6577
+    const val SHOW_PRAYERS_YOU_LACK_THE_REQUIREMENTS = 6578
+
+
+    const val NEW_STYLE_SKILL_GUIDE_INTERFACE = 15321
+    const val MAKEOVER_INTERFACE_VIEW = 4130
 }
